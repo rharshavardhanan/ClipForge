@@ -13,6 +13,8 @@ describe('downloader pure helpers', () => {
     const j = args.join(' ');
     expect(j).toContain('height<=1080');
     expect(j).toContain('--sub-format json3');
+    expect(j).toContain('--write-auto-subs');
+    expect(j).toContain('--write-subs');
     expect(j).toContain('--write-info-json');
     expect(j).toContain('--no-playlist');
     expect(j).toContain('--merge-output-format mp4');
