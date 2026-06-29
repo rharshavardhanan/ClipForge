@@ -29,4 +29,25 @@ describe('parseJson3', () => {
     expect(segs.length).toBeGreaterThanOrEqual(1);
     expect(segs[segs.length - 1].text).toMatch(/this\.$/);
   });
+
+  it('preserves legitimate in-line word repetition (no over-dedup)', () => {
+    const emphatic = JSON.stringify({ events: [
+      { tStartMs: 0, segs: [
+        { utf8: 'Stay', tOffsetMs: 0 }, { utf8: ' hard', tOffsetMs: 300 },
+        { utf8: ' stay', tOffsetMs: 700 }, { utf8: ' hard.', tOffsetMs: 1000 },
+      ]},
+    ]});
+    const segs = parseJson3(emphatic);
+    const words = segs.flatMap((s) => s.words.map((w) => w.word.trim().toLowerCase()));
+    expect(words).toEqual(['stay', 'hard', 'stay', 'hard.']);
+  });
+
+  it('drops only the rollover prefix on partial cross-event overlap', () => {
+    const sample = JSON.stringify({ events: [
+      { tStartMs: 0, segs: [{ utf8: 'A', tOffsetMs: 0 }, { utf8: ' B', tOffsetMs: 200 }, { utf8: ' C', tOffsetMs: 400 }] },
+      { tStartMs: 1000, segs: [{ utf8: 'B', tOffsetMs: 0 }, { utf8: ' C', tOffsetMs: 100 }, { utf8: ' D', tOffsetMs: 300 }, { utf8: ' E', tOffsetMs: 500 }] },
+    ]});
+    const words = parseJson3(sample).flatMap((s) => s.words.map((w) => w.word.trim()));
+    expect(words).toEqual(['A', 'B', 'C', 'D', 'E']);
+  });
 });
