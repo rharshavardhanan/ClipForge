@@ -10,6 +10,9 @@ afterEach(async () => { await rm(out, { force: true }); });
 describe('srtGenerator', () => {
   it('formats timestamps as HH:MM:SS,mmm', () => {
     expect(formatTimestamp(3661.5)).toBe('01:01:01,500');
+    expect(formatTimestamp(0)).toBe('00:00:00,000');
+    expect(formatTimestamp(3600)).toBe('01:00:00,000');
+    expect(formatTimestamp(3661.9995)).toBe('01:01:02,000'); // rounds up cleanly, no ",1000"
   });
   it('groups into cues of <=4 words', () => {
     const cues = groupCues([w('a', 0), w('b', 0.5), w('c', 1), w('d', 1.5), w('e', 2)], 4);

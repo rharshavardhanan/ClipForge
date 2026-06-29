@@ -3,8 +3,9 @@ import { writeFile, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 
 export function formatTimestamp(sec: number): string {
-  const ms = Math.round((sec % 1) * 1000);
-  const total = Math.floor(sec);
+  const msTotal = Math.round(sec * 1000);
+  const ms = msTotal % 1000;
+  const total = Math.floor(msTotal / 1000);
   const h = String(Math.floor(total / 3600)).padStart(2, '0');
   const m = String(Math.floor((total % 3600) / 60)).padStart(2, '0');
   const s = String(total % 60).padStart(2, '0');

@@ -12,6 +12,8 @@ describe('buildCaptionWords', () => {
     const cw = buildCaptionWords(words, 10, ['the truth is']);
     expect(cw[0].start).toBeCloseTo(0);
     expect(cw[0].emphasized).toBe(true);   // part of 'the truth is'
+    expect(cw[1].emphasized).toBe(true);   // 'truth'
+    expect(cw[2].emphasized).toBe(true);   // 'is'
     expect(cw[3].emphasized).toBe(false);  // 'simple' not in phrase
   });
 });
