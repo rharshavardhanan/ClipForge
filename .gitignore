@@ -1,0 +1,7 @@
+node_modules/
+dist/
+workspace/
+remotion/node_modules/
+remotion/public/
+.env
+*.log
