@@ -27,26 +27,41 @@ export function clampDuration(start: number, end: number): { start: number; end:
 }
 
 export function buildClips(
-  windows: WindowScore[], segments: TranscriptSegment[], audio: AudioEnergyLayer, threshold: number,
+  windows: WindowScore[],
+  segments: TranscriptSegment[],
+  audio: AudioEnergyLayer,
+  threshold: number,
+  duration = Infinity,
 ): ClipCandidate[] {
   const floor = threshold * 0.7;
+  const sorted = [...windows].sort((a, b) => a.start - b.start);
   const peaks = windows.filter((w) => w.composite >= threshold).sort((a, b) => b.composite - a.composite);
   const clips: ClipCandidate[] = [];
 
   for (const peak of peaks) {
-    // expand left/right while neighbors stay above floor
+    const pi = sorted.findIndex((w) => w.start === peak.start);
     let start = peak.start;
     let end = peak.end;
-    for (const w of windows) {
-      if (w.end <= start && w.composite >= floor && start - w.start <= 5) start = w.start;
-      if (w.start >= end && w.composite >= floor && w.end - end <= 5) end = w.end;
+
+    // Expand outward over consecutive windows whose composite stays >= floor, capped at 90s.
+    let i = pi;
+    while (i - 1 >= 0 && sorted[i - 1].composite >= floor && end - sorted[i - 1].start <= 90) {
+      i--;
+      start = sorted[i].start;
     }
-    // snap + cold-open + clamp
+    let j = pi;
+    while (j + 1 < sorted.length && sorted[j + 1].composite >= floor && sorted[j + 1].end - start <= 90) {
+      j++;
+      end = sorted[j].end;
+    }
+
+    // Snap to sentence boundaries, trim a cold open, clamp to 30-90s, and cap at real duration.
     start = coldOpenTrim(snapStart(start, segments), audio.silence_regions);
     end = snapEnd(end, segments);
     ({ start, end } = clampDuration(start, end));
+    end = Math.min(end, duration);
 
-    // IOU>0.5 merge against existing
+    // Drop candidates overlapping an already-kept clip (IOU > 0.5).
     const overlaps = clips.some((c) => {
       const inter = Math.max(0, Math.min(c.end, end) - Math.max(c.start, start));
       const union = Math.max(c.end, end) - Math.min(c.start, start);
