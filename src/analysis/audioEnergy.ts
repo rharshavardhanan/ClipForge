@@ -19,8 +19,8 @@ export function normalizeRms(db: number): number {
 }
 
 export function parseSilenceRegions(stderr: string): SilenceRegion[] {
-  const starts = [...stderr.matchAll(/silence_start:\s*(\d+(?:\.\d+)?)/g)].map((m) => Number(m[1]));
-  const ends = [...stderr.matchAll(/silence_end:\s*(\d+(?:\.\d+)?)/g)].map((m) => Number(m[1]));
+  const starts = [...stderr.matchAll(/silence_start:\s*(-?\d+(?:\.\d+)?)/g)].map((m) => Number(m[1]));
+  const ends = [...stderr.matchAll(/silence_end:\s*(-?\d+(?:\.\d+)?)/g)].map((m) => Number(m[1]));
   const regions: SilenceRegion[] = [];
   for (let i = 0; i < starts.length; i++) {
     if (ends[i] !== undefined) regions.push({ start: starts[i], end: ends[i] });
@@ -35,6 +35,7 @@ export async function analyzeAudio(videoPath: string): Promise<AudioEnergyLayer>
     'aresample=16000,astats=metadata=1:reset=16000,ametadata=mode=print:key=lavfi.astats.Overall.RMS_level',
   );
   const levels = parseRmsLevels(rmsErr);
+  // time is in seconds: reset=16000 @ 16kHz = 1s windows
   const rms_curve: RmsPoint[] = levels.map((db, i) => ({ time: i, rms: normalizeRms(db) }));
 
   const silErr = await runFfmpegNull(
