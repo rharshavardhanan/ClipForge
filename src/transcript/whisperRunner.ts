@@ -41,6 +41,11 @@ export async function transcribe(videoPath: string, workdir: string): Promise<Tr
   const model = await ensureModel(workdir);
   const outBase = join(workdir, 'whisper');
   await run('whisper-cli', ['-m', model, '-f', wav, '-oj', '-of', outBase, '-ml', '1']);
-  const json = JSON.parse(await readFile(`${outBase}.json`, 'utf8'));
+  let json: unknown;
+  try {
+    json = JSON.parse(await readFile(`${outBase}.json`, 'utf8'));
+  } catch {
+    throw new Error(`whisper-cli ran but no JSON output was found at ${outBase}.json — check your whisper-cli version`);
+  }
   return mapWhisperJson(json);
 }
