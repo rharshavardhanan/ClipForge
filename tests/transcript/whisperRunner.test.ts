@@ -1,0 +1,21 @@
+import { describe, it, expect } from 'vitest';
+import { mapWhisperJson } from '../../src/transcript/whisperRunner.js';
+
+const whisperOut = {
+  transcription: [
+    { offsets: { from: 0, to: 1200 }, text: ' Stay hard.', tokens: [
+      { text: ' Stay', offsets: { from: 0, to: 600 } },
+      { text: ' hard.', offsets: { from: 600, to: 1200 } },
+    ]},
+  ],
+};
+
+describe('mapWhisperJson', () => {
+  it('maps tokens to words with seconds timing', () => {
+    const segs = mapWhisperJson(whisperOut);
+    expect(segs[0].words.map((w) => w.word.trim())).toEqual(['Stay', 'hard.']);
+    expect(segs[0].words[0].start).toBeCloseTo(0);
+    expect(segs[0].words[1].end).toBeCloseTo(1.2);
+    expect(segs[0].text).toBe('Stay hard.');
+  });
+});
