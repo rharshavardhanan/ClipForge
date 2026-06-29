@@ -19,6 +19,15 @@ describe('detectTriggers', () => {
   });
   it('detects structural number-statements and contrast (1.0)', () => {
     const hits = detectTriggers([seg(0, 0, 'There are 3 reasons, but the truth is simple.')]);
-    expect(hits.some((h) => h.tier === 'structural' && h.weight === 1.0)).toBe(true);
+    expect(hits.some((h) => h.phrase === 'number-statement' && h.weight === 1.0)).toBe(true);
+    expect(hits.some((h) => h.phrase === 'contrast' && h.weight === 1.0)).toBe(true);
+  });
+  it('does not match a trigger embedded inside a larger word', () => {
+    const hits = detectTriggers([seg(0, 0, 'I had to await the waiter.')]);
+    expect(hits.some((h) => h.phrase === 'wait')).toBe(false);
+  });
+  it('detects six/eight/nine number-statements', () => {
+    const hits = detectTriggers([seg(0, 0, 'There are six steps to nine rules.')]);
+    expect(hits.some((h) => h.phrase === 'number-statement' && h.tier === 'structural')).toBe(true);
   });
 });
