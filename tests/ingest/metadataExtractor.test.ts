@@ -23,5 +23,9 @@ describe('mergeMetadata', () => {
     const m = mergeMetadata('uuid-1', probed, null);
     expect(m.title).toBe('uuid-1');
     expect(m.chapters).toEqual([]);
+    expect(m.viewCount).toBeUndefined();
+    expect(m.likeCount).toBeUndefined();
+    expect(m.commentCount).toBeUndefined();
+    expect(m.channelName).toBeUndefined();
   });
 });
