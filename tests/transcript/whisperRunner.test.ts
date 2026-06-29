@@ -18,4 +18,19 @@ describe('mapWhisperJson', () => {
     expect(segs[0].words[1].end).toBeCloseTo(1.2);
     expect(segs[0].text).toBe('Stay hard.');
   });
+
+  it('filters out bracketed and empty/whitespace tokens', () => {
+    const noisy = {
+      transcription: [
+        { offsets: { from: 0, to: 2000 }, text: ' Stay hard.', tokens: [
+          { text: ' Stay', offsets: { from: 0, to: 600 } },
+          { text: '[BLANK_AUDIO]', offsets: { from: 600, to: 1000 } },
+          { text: '   ', offsets: { from: 1000, to: 1100 } },
+          { text: ' hard.', offsets: { from: 1100, to: 2000 } },
+        ]},
+      ],
+    };
+    const segs = mapWhisperJson(noisy);
+    expect(segs[0].words.map((w) => w.word.trim())).toEqual(['Stay', 'hard.']);
+  });
 });
