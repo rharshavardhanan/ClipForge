@@ -9,4 +9,8 @@ describe('run', () => {
   it('rejects on non-zero exit', async () => {
     await expect(run('node', ['-e', 'process.exit(2)'])).rejects.toThrow(/exited 2/);
   });
+  it('reports the signal when the process is killed by a signal', async () => {
+    await expect(run('node', ['-e', "process.kill(process.pid,'SIGTERM')"]))
+      .rejects.toThrow(/SIGTERM/);
+  });
 });

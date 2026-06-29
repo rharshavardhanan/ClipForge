@@ -15,7 +15,7 @@ export async function withRetry<T>(
       lastErr = e;
       if (i === opts.attempts - 1) break;
       const delay = base * Math.pow(4, i); // 1s, 4s, 16s with base=1000
-      logger.warn(`[${opts.label}] attempt ${i + 1} failed: ${(e as Error).message}. Retrying in ${delay}ms`);
+      logger.warn(`[${opts.label}] attempt ${i + 1} failed: ${e instanceof Error ? e.message : String(e)}. Retrying in ${delay}ms`);
       await sleep(delay);
     }
   }

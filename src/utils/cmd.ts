@@ -20,9 +20,9 @@ export function run(
       if (opts.onStderr) s.split('\n').forEach((l) => l && opts.onStderr!(l));
     });
     child.on('error', reject);
-    child.on('close', (code) => {
+    child.on('close', (code, signal) => {
       if (code === 0) resolve({ stdout, stderr });
-      else reject(new Error(`${cmd} exited ${code}: ${stderr.slice(-500)}`));
+      else reject(new Error(`${cmd} exited ${code ?? `signal ${signal}`}: ${stderr.slice(-500)}`));
     });
   });
 }
