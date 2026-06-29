@@ -1,12 +1,17 @@
 import { run } from './cmd.js';
 
-export async function probe(videoPath: string) {
+export async function probe(videoPath: string): Promise<{ duration: number; width: number; height: number; fps: number; codec: string }> {
   const { stdout } = await run('ffprobe', [
     '-v', 'quiet', '-print_format', 'json',
     '-show_format', '-show_streams', videoPath,
   ]);
-  const j = JSON.parse(stdout);
-  const v = (j.streams as any[]).find((s) => s.codec_type === 'video');
+  let j: any;
+  try {
+    j = JSON.parse(stdout);
+  } catch {
+    throw new Error(`ffprobe returned unparseable output for ${videoPath}`);
+  }
+  const v = ((j.streams ?? []) as any[]).find((s) => s.codec_type === 'video');
   const [num, den] = String(v?.r_frame_rate ?? '30/1').split('/').map(Number);
   return {
     duration: Number(j.format?.duration ?? 0),
