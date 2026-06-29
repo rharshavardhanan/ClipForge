@@ -5,7 +5,7 @@ const STEP = 15;
 
 export function scoreWindows(duration: number, triggers: TriggerHit[], audio: AudioEnergyLayer): WindowScore[] {
   const windows: WindowScore[] = [];
-  for (let start = 0; start < Math.max(duration - WINDOW, 0) + STEP && start < duration; start += STEP) {
+  for (let start = 0; start < duration; start += STEP) {
     const end = Math.min(start + WINDOW, duration);
     const triggerSum = triggers.filter((t) => t.time >= start && t.time < end).reduce((a, t) => a + t.weight, 0);
     const triggerScore = Math.min(10, triggerSum);
