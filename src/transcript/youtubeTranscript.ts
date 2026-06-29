@@ -5,33 +5,37 @@ interface Event { tStartMs?: number; dDurationMs?: number; segs?: Seg[]; }
 
 export function parseJson3(raw: string): TranscriptSegment[] {
   const data = JSON.parse(raw) as { events?: Event[] };
-  const flat: TranscriptWord[] = [];
+  const norm = (s: string) => s.trim().toLowerCase();
 
+  // Build per-event word lists, then dedup YouTube rolling cues at the EVENT level:
+  // when a new event's leading words repeat the tail of what we've already kept (by text
+  // sequence), that prefix is the rollover — drop it. This models the rolling-cue
+  // mechanism without discarding legitimate in-speech repetition (e.g. "stay hard, stay hard").
+  const kept: TranscriptWord[] = [];
   for (const ev of data.events ?? []) {
     if (!ev.segs || ev.tStartMs === undefined) continue;
+    const eventWords: TranscriptWord[] = [];
     for (const seg of ev.segs) {
       const text = seg.utf8;
-      if (!text || text.trim() === '') continue; // skip newline-only segs
+      if (!text || text.trim() === '') continue; // skip newline/whitespace-only segs
       const start = (ev.tStartMs + (seg.tOffsetMs ?? 0)) / 1000;
-      flat.push({ start, end: start, word: text, probability: 1 });
+      eventWords.push({ start, end: start, word: text, probability: 1 });
     }
-  }
-
-  // Dedup rolling cues: drop a word whose trimmed text + ~start matches the previous kept word.
-  const deduped: TranscriptWord[] = [];
-  for (const w of flat) {
-    const prev = deduped[deduped.length - 1];
-    const t = w.word.trim();
-    if (prev && prev.word.trim() === t && Math.abs(prev.start - w.start) < 1.5) continue;
-    // also skip if this exact word already appeared very recently at a near-identical time (rolling repeat)
-    const recent = deduped.slice(-6).some((d) => d.word.trim() === t && Math.abs(d.start - w.start) < 1.5);
-    if (recent) continue;
-    deduped.push(w);
+    if (eventWords.length === 0) continue;
+    // largest K where the last K kept words (text) equal the first K event words (text)
+    let overlap = 0;
+    const maxK = Math.min(kept.length, eventWords.length);
+    for (let k = maxK; k > 0; k--) {
+      const keptTail = kept.slice(kept.length - k).map((w) => norm(w.word));
+      const evHead = eventWords.slice(0, k).map((w) => norm(w.word));
+      if (keptTail.every((t, idx) => t === evHead[idx])) { overlap = k; break; }
+    }
+    kept.push(...eventWords.slice(overlap));
   }
 
   // Assign end = next word start; last word gets +0.4s.
-  for (let i = 0; i < deduped.length; i++) {
-    deduped[i].end = i + 1 < deduped.length ? deduped[i + 1].start : deduped[i].start + 0.4;
+  for (let i = 0; i < kept.length; i++) {
+    kept[i].end = i + 1 < kept.length ? kept[i + 1].start : kept[i].start + 0.4;
   }
 
   // Group into sentence-ish segments on terminal punctuation or gap > 0.8s.
@@ -46,11 +50,11 @@ export function parseJson3(raw: string): TranscriptSegment[] {
     });
     cur = [];
   };
-  for (let i = 0; i < deduped.length; i++) {
-    const w = deduped[i];
+  for (let i = 0; i < kept.length; i++) {
+    const w = kept[i];
     cur.push(w);
     const endsSentence = /[.!?]"?$/.test(w.word.trim());
-    const next = deduped[i + 1];
+    const next = kept[i + 1];
     const gap = next ? next.start - w.end : 0;
     if (endsSentence || gap > 0.8) flush();
   }
