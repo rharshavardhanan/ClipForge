@@ -18,6 +18,8 @@ function overlapRatio(a: string, b: string): number {
   if (!wa.size || !wb.size) return 0;
   let shared = 0;
   for (const w of wa) if (wb.has(w)) shared++;
+  // Denominator is the smaller word-set: a clip whose transcript is a subset of another
+  // is treated as a near-duplicate (aggressive dedup, by design).
   return shared / Math.min(wa.size, wb.size);
 }
 

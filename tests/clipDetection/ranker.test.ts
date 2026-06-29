@@ -42,4 +42,15 @@ describe('ranker', () => {
     expect(r).toHaveLength(1);
     expect(r[0].composite_score).toBe(8);
   });
+
+  it('filters out candidates below minScore', () => {
+    const cands: ClipCandidate[] = [
+      { start: 0, end: 30, composite: 2, triggerScore: 0, audioScore: 0 },
+    ];
+    expect(rank(cands, segs, { top: 5, minScore: 3 })).toHaveLength(0);
+  });
+
+  it('defaultMinScore returns 0 for an empty window list', () => {
+    expect(defaultMinScore([])).toBe(0);
+  });
 });
