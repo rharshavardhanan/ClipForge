@@ -22,6 +22,10 @@ describe('audioEnergy parsers', () => {
     const s = '[silencedetect] silence_start: 2.0\n[silencedetect] silence_end: 3.2 | silence_duration: 1.2';
     expect(parseSilenceRegions(s)).toEqual([{ start: 2.0, end: 3.2 }]);
   });
+  it('accepts a negative silence_start at the stream boundary', () => {
+    const s = '[silencedetect] silence_start: -0.023\n[silencedetect] silence_end: 1.5 | silence_duration: 1.523';
+    expect(parseSilenceRegions(s)).toEqual([{ start: -0.023, end: 1.5 }]);
+  });
 });
 
 describe('analyzeAudio (integration)', () => {
