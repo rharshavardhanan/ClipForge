@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 export function buildClipJson(clip: RankedClip, jobId: string, files: { final: string; raw: string; srt: string }) {
   return {
-    clip_id: clip.clip_id, rank: clip.rank, source_video: jobId,
+    clip_id: clip.clip_id, rank: clip.rank, source_video: clip.source_video ?? jobId,
     start: clip.start, end: clip.end, duration: clip.duration,
     composite_score: clip.composite_score,
     layer_scores: {

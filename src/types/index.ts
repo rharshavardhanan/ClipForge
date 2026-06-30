@@ -28,6 +28,10 @@ export interface RankedClip {
   hook_moment: string; clip_titles: string[]; is_standalone: boolean;
   recommended_duration: number; reason: string; transcript_excerpt: string;
   sentiment?: string;
+  /** Set by global cross-video ranking (MV1) to attribute this clip to its source video.
+   * Absent for single-video runs — exporter falls back to the jobId/source args passed in. */
+  source_video?: string;
+  source_url?: string;
 }
 export interface SemanticScores {
   emotional_intensity: number; controversy: number; humor: number; surprise: number;
@@ -56,4 +60,18 @@ export interface ClipCompositionProps {
   style: 'minimal' | 'card' | 'bold';
   accentColor: string; showHookCard: boolean; hookText: string;
   cropTrack?: CropKeyframe[]; srcW?: number; srcH?: number;
+}
+
+// Multi-video cross-ranking (MV1)
+/** Result of analyzing a single video, up to (but not including) ranking/export. */
+export interface VideoAnalysis {
+  jobId: string;
+  url: string;
+  videoPath: string;
+  meta: VideoMetadata;
+  segments: TranscriptSegment[];
+  triggers: TriggerHit[];
+  audio: AudioEnergyLayer;
+  semantic: SemanticWindow[];
+  candidates: ClipCandidate[];
 }
