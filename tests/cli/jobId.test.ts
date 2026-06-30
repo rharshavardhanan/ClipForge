@@ -9,4 +9,7 @@ describe('resolveJobId', () => {
     const id = resolveJobId('https://vimeo.com/123');
     expect(id).toMatch(/[0-9a-f-]{36}/);
   });
+  it('resolves a youtu.be short URL to the 11-char video id', () => {
+    expect(resolveJobId('https://youtu.be/H14bBuluwB8')).toBe('H14bBuluwB8');
+  });
 });
