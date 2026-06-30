@@ -13,7 +13,8 @@ import { buildClips } from '../../clipDetection/merger.js';
 import { rank, defaultMinScore } from '../../clipDetection/ranker.js';
 import { buildCaptionWords } from '../../captions/captionWords.js';
 import { writeSrt } from '../../captions/srtGenerator.js';
-import { extractRaw } from '../../extraction/clipExtractor.js';
+import { extractRaw, extractFullFrame } from '../../extraction/clipExtractor.js';
+import { detectFaceTrack } from '../../extraction/faceTracker.js';
 import { render } from '../../captions/remotionRenderer.js';
 import { writeExports } from '../../export/exporter.js';
 import { logger } from '../../utils/logger.js';
@@ -62,17 +63,36 @@ export async function runAll(url: string, opts: AllOpts): Promise<string> {
 
   for (const clip of ranked) {
     const sp2 = ora(`[${clip.clip_id}] extract + caption…`).start();
-    const rawPath = join(dirs.clips, `${clip.clip_id}_raw.mp4`);
-    await extractRaw(dl.videoPath, clip.start, clip.end, { width: meta.width, height: meta.height }, rawPath);
+    const finalPath = join(dirs.exports, `${clip.clip_id}_final.mp4`);
 
     const clipWords = segments.flatMap((s) => s.words).filter((w) => w.end > clip.start && w.start < clip.end);
     const captionWords = buildCaptionWords(clipWords, clip.start, triggers.map((t) => t.phrase));
     await writeSrt(captionWords, join(dirs.exports, `${clip.clip_id}.srt`));
-    await render({ rawClipPath: rawPath, words: captionWords, outPath: join(dirs.exports, `${clip.clip_id}_final.mp4`), fps: meta.fps, accentColor: opts.accent, style: opts.style });
+
+    const fullPath = join(dirs.clips, `${clip.clip_id}_full.mp4`);
+    await extractFullFrame(dl.videoPath, clip.start, clip.end, fullPath);
+    const track = await detectFaceTrack(fullPath, meta.width, meta.height);
+
+    let producedRawPath: string;
+    if (track.length > 0) {
+      await render({
+        rawClipPath: fullPath, words: captionWords, outPath: finalPath, fps: meta.fps,
+        accentColor: opts.accent, style: opts.style,
+        cropTrack: track, srcW: meta.width, srcH: meta.height,
+      });
+      producedRawPath = fullPath;
+      logger.info(`[${clip.clip_id}] reframed (${track.length} face keyframes)`);
+    } else {
+      const rawPath = join(dirs.clips, `${clip.clip_id}_raw.mp4`);
+      await extractRaw(dl.videoPath, clip.start, clip.end, { width: meta.width, height: meta.height }, rawPath);
+      await render({ rawClipPath: rawPath, words: captionWords, outPath: finalPath, fps: meta.fps, accentColor: opts.accent, style: opts.style });
+      producedRawPath = rawPath;
+      logger.info(`[${clip.clip_id}] center-crop fallback (no faces detected)`);
+    }
 
     // copy raw into exports for completeness
     await mkdir(dirs.exports, { recursive: true });
-    await copyFile(rawPath, join(dirs.exports, `${clip.clip_id}_raw.mp4`));
+    await copyFile(producedRawPath, join(dirs.exports, `${clip.clip_id}_raw.mp4`));
     sp2.succeed(`[${clip.clip_id}] done`);
   }
 
