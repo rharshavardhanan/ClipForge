@@ -15,7 +15,7 @@ export function buildYtdlpArgs(url: string, outDir: string): string[] {
     url,
     '-f', 'bestvideo[height<=1080]+bestaudio/best[height<=1080]',
     '--merge-output-format', 'mp4',
-    '--write-auto-subs', '--write-subs', '--sub-langs', 'en.*', '--sub-format', 'json3',
+    '--write-auto-subs', '--write-subs', '--sub-langs', 'en,en-US,en-GB,en-orig', '--sub-format', 'json3',
     '--write-info-json', '--no-playlist',
     '--retries', '5', '--fragment-retries', '5',
     '--newline', '-o', join(outDir, 'video.%(ext)s'),
