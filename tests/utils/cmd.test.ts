@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { run } from '../../src/utils/cmd.js';
+import { resolve } from 'node:path';
 
 describe('run', () => {
   it('captures stdout from a successful command', async () => {
@@ -14,7 +15,8 @@ describe('run', () => {
       .rejects.toThrow(/SIGTERM/);
   });
   it('runs in a given cwd', async () => {
-    const { stdout } = await run('node', ['-e', 'process.stdout.write(process.cwd())'], { cwd: 'remotion' });
-    expect(stdout.endsWith('remotion')).toBe(true);
+    const dir = resolve('remotion');
+    const { stdout } = await run('node', ['-e', 'process.stdout.write(process.cwd())'], { cwd: dir });
+    expect(stdout).toBe(dir);
   });
 });
