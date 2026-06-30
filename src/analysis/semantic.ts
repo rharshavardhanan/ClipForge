@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { withRetry } from '../utils/retry.js';
 import { logger } from '../utils/logger.js';
+import { KeyPool, loadGeminiKeys } from './keyPool.js';
 import type { TranscriptSegment, SemanticScores, SemanticWindow } from '../types/index.js';
 
 export interface TranscriptChunk { start: number; end: number; text: string; }
@@ -167,6 +168,30 @@ function batchChunks(chunks: TranscriptChunk[], batchSize: number): TranscriptCh
   return batches;
 }
 
+const DEFAULT_RATE_LIMIT_COOLDOWN_MS = 60_000;
+
+/** PURE: true if an error looks like a 429 / quota-exhausted response from the Gemini API. */
+export function isRateLimitError(e: unknown): boolean {
+  if (!e) return false;
+  const status = (e as { status?: number }).status;
+  if (status === 429) return true;
+  const message = e instanceof Error ? e.message : String(e);
+  return /\b429\b|RESOURCE_EXHAUSTED|quota/i.test(message);
+}
+
+/**
+ * PURE: extract a retryDelay (ms) from a Gemini error's message, e.g. a
+ * RetryInfo detail like {"retryDelay":"19s"}. Returns null if not found/parsable.
+ */
+export function parseRetryDelayMs(e: unknown): number | null {
+  const message = e instanceof Error ? e.message : String(e);
+  const match = message.match(/"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"/);
+  if (!match) return null;
+  const seconds = parseFloat(match[1]);
+  if (!Number.isFinite(seconds)) return null;
+  return Math.round(seconds * 1000);
+}
+
 function toWindow(chunk: TranscriptChunk, result: SemanticChunkResult): SemanticWindow {
   return {
     start: chunk.start,
@@ -191,9 +216,10 @@ export async function analyzeSemantic(
     return JSON.parse(await readFile(opts.outPath, 'utf8'));
   }
 
-  const apiKey = opts.apiKey ?? process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    logger.warn('GEMINI_API_KEY not set — skipping semantic layer (falling back to Slice-1 scoring)');
+  const keys = opts.apiKey ? [opts.apiKey] : loadGeminiKeys();
+  const pool = new KeyPool(keys);
+  if (pool.size() === 0) {
+    logger.warn('GEMINI_API_KEY(S) not set — skipping semantic layer (falling back to Slice-1 scoring)');
     return [];
   }
 
@@ -201,16 +227,26 @@ export async function analyzeSemantic(
   if (chunks.length === 0) return [];
 
   const modelName = opts.model ?? process.env.GEMINI_MODEL ?? 'gemini-2.5-flash';
-  const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({
-    model: modelName,
-    systemInstruction: SYSTEM_PROMPT,
-    generationConfig: { temperature: 0.3, responseMimeType: 'application/json' },
-  });
+  const modelCache = new Map<string, ReturnType<GoogleGenerativeAI['getGenerativeModel']>>();
+  const modelFor = (key: string) => {
+    let m = modelCache.get(key);
+    if (!m) {
+      m = new GoogleGenerativeAI(key).getGenerativeModel({
+        model: modelName,
+        systemInstruction: SYSTEM_PROMPT,
+        generationConfig: { temperature: 0.3, responseMimeType: 'application/json' },
+      });
+      modelCache.set(key, m);
+    }
+    return m;
+  };
 
   const batches = batchChunks(chunks, BATCH_SIZE);
+  // When rotating across multiple keys we can usefully run more batches in parallel
+  // (one per available key), but keep it bounded and simple.
+  const concurrency = Math.max(BATCH_CONCURRENCY, Math.min(pool.size(), batches.length));
 
-  const batchResults = await mapWithConcurrency(batches, BATCH_CONCURRENCY, async (batch, batchIndex): Promise<(SemanticWindow | null)[]> => {
+  const batchResults = await mapWithConcurrency(batches, concurrency, async (batch, batchIndex): Promise<(SemanticWindow | null)[]> => {
     // Small stagger between batch kickoffs to smooth request bursts against the rate limit.
     if (batchIndex > 0) await sleep(INTER_BATCH_DELAY_MS);
 
@@ -218,13 +254,25 @@ export async function analyzeSemantic(
     try {
       const results = await withRetry(
         async () => {
-          const res = await model.generateContent(buildBatchPrompt(batch));
-          const text = res.response.text();
-          const parsed = parseGeminiBatch(text);
-          if (!parsed) throw new Error('failed to parse Gemini batch JSON array response');
-          return parsed;
+          const key = pool.next();
+          if (!key) throw new Error('no Gemini API keys available');
+          try {
+            const res = await modelFor(key).generateContent(buildBatchPrompt(batch));
+            const text = res.response.text();
+            const parsed = parseGeminiBatch(text);
+            if (!parsed) throw new Error('failed to parse Gemini batch JSON array response');
+            pool.reportSuccess(key);
+            return parsed;
+          } catch (e) {
+            if (isRateLimitError(e)) {
+              const delay = parseRetryDelayMs(e) ?? DEFAULT_RATE_LIMIT_COOLDOWN_MS;
+              pool.reportRateLimited(key, delay);
+              logger.warn(`[${label}] key rate-limited, cooling down ${delay}ms and rotating to next key`);
+            }
+            throw e;
+          }
         },
-        { attempts: 4, label },
+        { attempts: Math.max(4, pool.size()), label },
       );
 
       // Map what we can by index; skip the rest rather than crashing on a short/garbled batch.

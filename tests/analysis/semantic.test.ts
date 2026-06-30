@@ -6,6 +6,8 @@ import {
   parseGeminiJson,
   parseGeminiBatch,
   analyzeSemantic,
+  isRateLimitError,
+  parseRetryDelayMs,
 } from '../../src/analysis/semantic.js';
 import type { TranscriptSegment, SemanticScores } from '../../src/types/index.js';
 
@@ -149,14 +151,55 @@ describe('parseGeminiBatch', () => {
 describe('analyzeSemantic (no API key)', () => {
   it('returns [] without making any network calls', async () => {
     const savedKey = process.env.GEMINI_API_KEY;
+    const savedKeys = process.env.GEMINI_API_KEYS;
     delete process.env.GEMINI_API_KEY;
+    delete process.env.GEMINI_API_KEYS;
     try {
       const segments: TranscriptSegment[] = [seg(0, 0, 10, 'hello world')];
       const result = await analyzeSemantic(segments, { apiKey: undefined, outPath: undefined });
       expect(result).toEqual([]);
     } finally {
       if (savedKey !== undefined) process.env.GEMINI_API_KEY = savedKey;
+      if (savedKeys !== undefined) process.env.GEMINI_API_KEYS = savedKeys;
     }
+  });
+});
+
+describe('isRateLimitError', () => {
+  it('detects a 429 status field', () => {
+    expect(isRateLimitError({ status: 429 })).toBe(true);
+  });
+
+  it('detects RESOURCE_EXHAUSTED in the message', () => {
+    expect(isRateLimitError(new Error('[GoogleGenerativeAI Error]: ... RESOURCE_EXHAUSTED ...'))).toBe(true);
+  });
+
+  it('detects "quota" in the message', () => {
+    expect(isRateLimitError(new Error('You exceeded your current quota'))).toBe(true);
+  });
+
+  it('returns false for unrelated errors', () => {
+    expect(isRateLimitError(new Error('failed to parse JSON'))).toBe(false);
+  });
+
+  it('returns false for falsy input', () => {
+    expect(isRateLimitError(null)).toBe(false);
+  });
+});
+
+describe('parseRetryDelayMs', () => {
+  it('parses a retryDelay like "19s" into milliseconds', () => {
+    const err = new Error('[429] quota exceeded [{"@type":"type.googleapis.com/google.rpc.RetryInfo","retryDelay":"19s"}]');
+    expect(parseRetryDelayMs(err)).toBe(19000);
+  });
+
+  it('parses a fractional retryDelay', () => {
+    const err = new Error('"retryDelay":"1.5s"');
+    expect(parseRetryDelayMs(err)).toBe(1500);
+  });
+
+  it('returns null when no retryDelay is present', () => {
+    expect(parseRetryDelayMs(new Error('some other error'))).toBeNull();
   });
 });
 
