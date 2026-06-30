@@ -13,4 +13,8 @@ describe('run', () => {
     await expect(run('node', ['-e', "process.kill(process.pid,'SIGTERM')"]))
       .rejects.toThrow(/SIGTERM/);
   });
+  it('runs in a given cwd', async () => {
+    const { stdout } = await run('node', ['-e', 'process.stdout.write(process.cwd())'], { cwd: 'remotion' });
+    expect(stdout.endsWith('remotion')).toBe(true);
+  });
 });
