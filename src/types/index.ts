@@ -42,6 +42,13 @@ export interface CaptionWord { text: string; start: number; end: number; emphasi
 export interface FaceBox { x: number; y: number; w: number; h: number; }   // pixels in source frame
 export interface FaceSample { time: number; box: FaceBox | null; }          // null = no face that sample
 export interface CropKeyframe { time: number; cx: number; cy: number; cropW: number; cropH: number; } // crop window center + size, in source px
+
+// Multi-face / active-speaker (MS1)
+export interface FaceObs { box: FaceBox; mouthOpenness: number; }          // one face in one frame
+export interface FrameObs { time: number; faces: FaceObs[]; }              // all faces in a sampled frame
+export interface ActiveSample { time: number; box: FaceBox | null; }       // chosen active-speaker box per sample
+export interface TrackSample { time: number; box: FaceBox; mouthOpenness: number; }
+export interface Track { id: number; samples: TrackSample[]; }
 export interface ClipCompositionProps {
   videoPath: string;          // path relative to remotion/public (staticFile)
   words: CaptionWord[];
