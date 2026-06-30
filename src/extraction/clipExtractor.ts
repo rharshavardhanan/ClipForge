@@ -17,8 +17,8 @@ export function buildExtractArgs(video: string, start: number, dur: number, vf: 
   return [
     '-y', '-ss', String(start), '-i', video, '-t', String(dur),
     '-vf', vf, '-af', af,
-    '-c:v', 'libx264', '-crf', '18', '-preset', 'medium', '-pix_fmt', 'yuv420p',
-    '-c:a', 'aac', '-b:a', '192k', outPath,
+    '-c:v', 'libx264', '-crf', '14', '-preset', 'medium', '-pix_fmt', 'yuv420p',
+    '-fps_mode', 'cfr', '-c:a', 'aac', '-b:a', '192k', outPath,
   ];
 }
 

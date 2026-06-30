@@ -13,7 +13,7 @@ export function parseVideoId(url: string): string | null {
 export function buildYtdlpArgs(url: string, outDir: string): string[] {
   return [
     url,
-    '-f', 'bestvideo[height<=1080]+bestaudio/best[height<=1080]',
+    '-f', 'bestvideo[height<=1440][vcodec!*=av01]+bestaudio/bestvideo[height<=1440]+bestaudio/best[height<=1440]/best',
     '--merge-output-format', 'mp4',
     '--write-auto-subs', '--write-subs', '--sub-langs', 'en,en-US,en-GB,en-orig', '--sub-format', 'json3',
     '--write-info-json', '--no-playlist',
