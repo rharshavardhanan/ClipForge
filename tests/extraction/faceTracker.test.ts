@@ -1,11 +1,27 @@
 import { describe, it, expect } from 'vitest';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { smoothTrack, detectFaceTrack } from '../../src/extraction/faceTracker.js';
-import type { FaceSample } from '../../src/types/index.js';
+import {
+  smoothTrack,
+  detectFaceTrack,
+  smoothSeriesBidirectional,
+  applyZoomHysteresis,
+  buildActiveSpeakerTrack,
+} from '../../src/extraction/faceTracker.js';
+import type { ActiveSample, FaceSample } from '../../src/types/index.js';
 
 const SRC_W = 1920;
 const SRC_H = 1080;
+
+/** One-pass causal EMA, used as a baseline to contrast against the bidirectional smoother. */
+function causalEma(values: number[], alpha: number): number[] {
+  if (values.length === 0) return [];
+  const out: number[] = [values[0]];
+  for (let i = 1; i < values.length; i++) {
+    out.push(alpha * values[i] + (1 - alpha) * out[i - 1]);
+  }
+  return out;
+}
 
 describe('smoothTrack (pure)', () => {
   it('all-null samples -> []', () => {
@@ -48,18 +64,21 @@ describe('smoothTrack (pure)', () => {
     expect(track[0].cy).toBeGreaterThan(100);
   });
 
-  it('EMA-smooths center: 2nd keyframe cx lands between 1st keyframe and raw 2nd center', () => {
+  it('bidirectionally smooths center: both keyframes land strictly between the two raw centers (no hard jump, no causal lag)', () => {
     const samples: FaceSample[] = [
       { time: 0, box: { x: 100, y: 400, w: 200, h: 200 } },   // center x = 200
       { time: 1, box: { x: 1600, y: 400, w: 200, h: 200 } },  // center x = 1700 (far apart)
     ];
     const track = smoothTrack(samples, SRC_W, SRC_H, 0.15);
-    const firstCx = track[0].cx;
+    const rawFirstCx = 200;
     const rawSecondCx = 1700;
-    const secondCx = track[1].cx;
-    // smoothing applied: not a hard jump to the raw value
-    expect(secondCx).toBeGreaterThan(firstCx);
-    expect(secondCx).toBeLessThan(rawSecondCx);
+    // smoothing applied: neither keyframe hard-jumps to its raw value, and the
+    // second keyframe is pulled up by the (non-causal) bidirectional smoother,
+    // not left lagging near the first value as a one-pass causal EMA would.
+    expect(track[0].cx).toBeGreaterThan(rawFirstCx);
+    expect(track[0].cx).toBeLessThan(rawSecondCx);
+    expect(track[1].cx).toBeGreaterThan(track[0].cx);
+    expect(track[1].cx).toBeLessThan(rawSecondCx);
   });
 
   it('clamp: a face near the edge yields a crop window fully inside [0,srcW]x[0,srcH]', () => {
@@ -142,6 +161,161 @@ describe('smoothTrack (pure)', () => {
     ];
     const track = smoothTrack(samples, SRC_W, SRC_H);
     expect(track.map((k) => k.time)).toEqual([0, 0.33, 0.66]);
+  });
+});
+
+describe('smoothSeriesBidirectional (pure)', () => {
+  it('on a step input, the value AT the step is centered, not trailing (contrast with causal EMA)', () => {
+    const values = [0, 0, 0, 0, 0, 10, 10, 10, 10, 10];
+    const stepIndex = 5;
+    const alpha = 0.3;
+
+    const bidirectional = smoothSeriesBidirectional(values, alpha);
+    const causal = causalEma(values, alpha);
+
+    const midpoint = 5; // (0 + 10) / 2
+
+    // Causal EMA still lags well behind the midpoint right at the step (it has
+    // only seen zeros up to and including this sample).
+    expect(causal[stepIndex]).toBeLessThan(midpoint);
+    // The bidirectional (zero-lag) smoother centers its value at the step:
+    // it's pulled up toward the midpoint by the backward pass seeing the future.
+    expect(bidirectional[stepIndex]).toBeGreaterThan(causal[stepIndex]);
+    expect(Math.abs(bidirectional[stepIndex] - midpoint)).toBeLessThan(Math.abs(causal[stepIndex] - midpoint));
+  });
+
+  it('empty input -> []', () => {
+    expect(smoothSeriesBidirectional([], 0.2)).toEqual([]);
+  });
+
+  it('single value -> unchanged', () => {
+    expect(smoothSeriesBidirectional([42], 0.2)).toEqual([42]);
+  });
+
+  it('constant series stays constant', () => {
+    const values = [5, 5, 5, 5, 5];
+    const result = smoothSeriesBidirectional(values, 0.3);
+    for (const v of result) expect(v).toBeCloseTo(5, 6);
+  });
+});
+
+describe('applyZoomHysteresis (pure)', () => {
+  it('small fluctuations within the deadband are held flat', () => {
+    // Held value starts at 500; subsequent values wobble by < 6% (the default deadband).
+    const cropH = [500, 510, 495, 505, 490];
+    const result = applyZoomHysteresis(cropH, 0.06);
+    expect(result).toEqual([500, 500, 500, 500, 500]);
+  });
+
+  it('a change beyond the deadband is taken (snaps to the new value)', () => {
+    // 500 -> 600 is a 20% jump, well beyond the 6% deadband.
+    const cropH = [500, 500, 600, 600, 600];
+    const result = applyZoomHysteresis(cropH, 0.06);
+    expect(result).toEqual([500, 500, 600, 600, 600]);
+  });
+
+  it('holds through small wobbles, then snaps once a real change accumulates', () => {
+    const cropH = [400, 405, 398, 402, 700, 705, 698];
+    const result = applyZoomHysteresis(cropH, 0.06);
+    expect(result.slice(0, 4)).toEqual([400, 400, 400, 400]);
+    expect(result.slice(4)).toEqual([700, 700, 700]);
+  });
+
+  it('empty input -> []', () => {
+    expect(applyZoomHysteresis([], 0.06)).toEqual([]);
+  });
+});
+
+describe('buildActiveSpeakerTrack (pure)', () => {
+  const boxA = { x: 200, y: 400, w: 200, h: 200 }; // center x = 300
+  const boxB = { x: 1400, y: 400, w: 200, h: 200 }; // center x = 1500 (far apart -> a "switch")
+
+  it('single-speaker series (no switches) -> stable track following that speaker', () => {
+    const active: ActiveSample[] = [
+      { time: 0, box: boxA },
+      { time: 0.33, box: { x: 205, y: 402, w: 200, h: 200 } },
+      { time: 0.66, box: { x: 210, y: 404, w: 200, h: 200 } },
+      { time: 1.0, box: { x: 208, y: 401, w: 200, h: 200 } },
+    ];
+    const track = buildActiveSpeakerTrack(active, SRC_W, SRC_H);
+    expect(track).toHaveLength(4);
+    // All crop centers should stay close to speaker A's region, not jump around.
+    for (const kf of track) {
+      expect(kf.cx).toBeGreaterThan(150);
+      expect(kf.cx).toBeLessThan(600);
+    }
+  });
+
+  it('a switch between two speakers at different x produces an interpolated (not instantaneous) transition', () => {
+    // Sampled at ~0.165s steps so several samples fall inside the 0.5s
+    // switch-transition window after the jump from A to B at t=0.5.
+    const active: ActiveSample[] = [
+      { time: 0, box: boxA },
+      { time: 0.165, box: boxA },
+      { time: 0.33, box: boxA },
+      { time: 0.5, box: boxB }, // switch happens here
+      { time: 0.665, box: boxB },
+      { time: 0.83, box: boxB },
+      { time: 1.0, box: boxB },
+      { time: 1.5, box: boxB },
+      { time: 2.0, box: boxB },
+    ];
+    const track = buildActiveSpeakerTrack(active, SRC_W, SRC_H);
+
+    const beforeSwitch = track.find((k) => k.time === 0.33)!;
+    const atSwitch = track.find((k) => k.time === 0.5)!;
+    const midTransition = track.find((k) => k.time === 0.665)!;
+    const longAfter = track.find((k) => k.time === 2.0)!;
+
+    // The crop center should move from near A toward B gradually: at the
+    // switch sample and shortly after, cx should be between A's and B's
+    // crop centers (not already snapped all the way to B).
+    expect(atSwitch.cx).toBeGreaterThan(beforeSwitch.cx);
+    expect(atSwitch.cx).toBeLessThan(longAfter.cx);
+    expect(midTransition.cx).toBeGreaterThan(atSwitch.cx);
+    expect(midTransition.cx).toBeLessThan(longAfter.cx);
+
+    // Well after the transition window, the track should have settled near speaker B.
+    expect(longAfter.cx).toBeGreaterThan(1000);
+  });
+
+  it('empty input -> []', () => {
+    expect(buildActiveSpeakerTrack([], SRC_W, SRC_H)).toEqual([]);
+  });
+
+  it('all-null input -> []', () => {
+    const active: ActiveSample[] = [
+      { time: 0, box: null },
+      { time: 1, box: null },
+    ];
+    expect(buildActiveSpeakerTrack(active, SRC_W, SRC_H)).toEqual([]);
+  });
+
+  it('gap-fill: a null box mid-series holds the last known box (no jump to origin)', () => {
+    const active: ActiveSample[] = [
+      { time: 0, box: boxA },
+      { time: 1, box: null },
+      { time: 2, box: { x: 210, y: 405, w: 200, h: 200 } },
+    ];
+    const track = buildActiveSpeakerTrack(active, SRC_W, SRC_H);
+    expect(track).toHaveLength(3);
+    expect(track[1].cx).toBeGreaterThan(150);
+    expect(track[1].cy).toBeGreaterThan(100);
+  });
+
+  it('crop windows stay 9:16 and fully clamped inside the source frame', () => {
+    const active: ActiveSample[] = [
+      { time: 0, box: boxA },
+      { time: 1, box: boxB },
+    ];
+    const track = buildActiveSpeakerTrack(active, SRC_W, SRC_H);
+    for (const kf of track) {
+      expect(kf.cropW).toBeCloseTo((kf.cropH * 9) / 16, 1);
+      expect(kf.cx - kf.cropW / 2).toBeGreaterThanOrEqual(-0.01);
+      expect(kf.cx + kf.cropW / 2).toBeLessThanOrEqual(SRC_W + 0.01);
+      expect(kf.cy - kf.cropH / 2).toBeGreaterThanOrEqual(-0.01);
+      expect(kf.cy + kf.cropH / 2).toBeLessThanOrEqual(SRC_H + 0.01);
+    }
   });
 });
 
