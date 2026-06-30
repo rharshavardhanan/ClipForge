@@ -5,7 +5,9 @@ import { run } from '../utils/cmd.js';
 import type { CropKeyframe, FaceBox, FaceSample } from '../types/index.js';
 
 const MIN_CROP_H_FRACTION = 0.2; // floor for cropH as a fraction of srcH, avoids degenerate tiny windows
-const FACE_HEIGHT_FRACTION = 0.26; // target: face height ~26% of cropH
+const MAX_CROP_H_FRACTION = 0.9; // ceiling for cropH as a fraction of srcH, avoids ever showing the full wide shot
+const FACE_HEIGHT_FRACTION = 0.34; // target: face height ~34% of cropH (tighter framing)
+const FACE_VERTICAL_POSITION = 0.38; // target: face vertical center sits at ~38% from top of crop (upper third)
 
 /**
  * Smooths a (possibly sparse/gappy) sequence of face samples into a per-sample
@@ -35,12 +37,16 @@ export function smoothTrack(
   }
 
   const minCropH = srcH * MIN_CROP_H_FRACTION;
+  const maxCropH = srcH * MAX_CROP_H_FRACTION;
 
   // Desired (raw, unsmoothed) crop window per sample.
   const desired = filled.map((box) => {
     const cx = box.x + box.w / 2;
-    const cy = box.y + box.h / 2;
-    const cropH = clamp(box.h / FACE_HEIGHT_FRACTION, minCropH, srcH);
+    const faceCenterY = box.y + box.h / 2;
+    const cropH = clamp(box.h / FACE_HEIGHT_FRACTION, minCropH, maxCropH);
+    // Position the face in the upper third: crop center sits below the face
+    // center by (0.5 - FACE_VERTICAL_POSITION) * cropH.
+    const cy = faceCenterY + (0.5 - FACE_VERTICAL_POSITION) * cropH;
     return { cx, cy, cropH };
   });
 
