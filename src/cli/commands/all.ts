@@ -13,6 +13,7 @@ import { scoreWindows } from '../../clipDetection/windowScorer.js';
 import { buildClips } from '../../clipDetection/merger.js';
 import { rank, defaultMinScore } from '../../clipDetection/ranker.js';
 import { buildCaptionWords } from '../../captions/captionWords.js';
+import { sentimentColor } from '../../captions/sentimentColor.js';
 import { writeSrt } from '../../captions/srtGenerator.js';
 import { extractRaw, extractFullFrame } from '../../extraction/clipExtractor.js';
 import { detectFaceTrack } from '../../extraction/faceTracker.js';
@@ -91,12 +92,13 @@ export async function runAll(url: string, opts: AllOpts): Promise<string> {
     const track = await detectFaceTrack(fullPath, meta.width, meta.height);
 
     const hookText = clip.hook_moment ? hookCardText(clip.hook_moment) : undefined;
+    const accentColor = sentimentColor(clip.sentiment, opts.accent);
 
     let producedRawPath: string;
     if (track.length > 0) {
       await render({
         rawClipPath: fullPath, words: captionWords, outPath: finalPath, fps: meta.fps,
-        accentColor: opts.accent, style: opts.style,
+        accentColor, style: opts.style,
         cropTrack: track, srcW: meta.width, srcH: meta.height,
         hookText,
       });
@@ -105,7 +107,7 @@ export async function runAll(url: string, opts: AllOpts): Promise<string> {
     } else {
       const rawPath = join(dirs.clips, `${clip.clip_id}_raw.mp4`);
       await extractRaw(dl.videoPath, clip.start, clip.end, { width: meta.width, height: meta.height }, rawPath);
-      await render({ rawClipPath: rawPath, words: captionWords, outPath: finalPath, fps: meta.fps, accentColor: opts.accent, style: opts.style, hookText });
+      await render({ rawClipPath: rawPath, words: captionWords, outPath: finalPath, fps: meta.fps, accentColor, style: opts.style, hookText });
       producedRawPath = rawPath;
       logger.info(`[${clip.clip_id}] center-crop fallback (no faces detected)`);
     }
