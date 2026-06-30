@@ -8,10 +8,11 @@ describe('downloader pure helpers', () => {
     expect(parseVideoId('https://vimeo.com/123')).toBeNull();
   });
 
-  it('builds yt-dlp args with json3 subs, info json, 1080p cap, no playlist', () => {
+  it('builds yt-dlp args with json3 subs, info json, 1440p non-AV1 cap, no playlist', () => {
     const args = buildYtdlpArgs('URL', '/out');
     const j = args.join(' ');
-    expect(j).toContain('height<=1080');
+    expect(j).toContain('height<=1440');
+    expect(j).toContain('vcodec!*=av01');
     expect(j).toContain('--sub-format json3');
     expect(j).toContain('--write-auto-subs');
     expect(j).toContain('--write-subs');
