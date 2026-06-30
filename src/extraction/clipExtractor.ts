@@ -22,6 +22,15 @@ export function buildExtractArgs(video: string, start: number, dur: number, vf: 
   ];
 }
 
+export function buildFullFrameExtractArgs(video: string, start: number, dur: number, af: string, outPath: string): string[] {
+  return [
+    '-y', '-ss', String(start), '-i', video, '-t', String(dur),
+    '-af', af,
+    '-c:v', 'libx264', '-crf', '14', '-preset', 'medium', '-pix_fmt', 'yuv420p',
+    '-fps_mode', 'cfr', '-c:a', 'aac', '-b:a', '192k', outPath,
+  ];
+}
+
 export async function extractRaw(
   video: string, start: number, end: number, dims: { width: number; height: number }, outPath: string,
 ): Promise<void> {
@@ -29,4 +38,16 @@ export async function extractRaw(
   const vf = buildVideoFilter(dims.width, dims.height);
   const args = buildExtractArgs(video, start, end - start, vf, buildAudioFilter(), outPath);
   await withRetry(() => run('ffmpeg', args), { attempts: 3, label: 'ffmpeg-extract' });
+}
+
+/**
+ * Extracts [start,end] with NO crop filter — keeps the source's full 16:9 frame
+ * at source resolution. Used as the input to face-tracked reframing in Remotion.
+ */
+export async function extractFullFrame(
+  video: string, start: number, end: number, outPath: string,
+): Promise<void> {
+  await mkdir(dirname(outPath), { recursive: true });
+  const args = buildFullFrameExtractArgs(video, start, end - start, buildAudioFilter(), outPath);
+  await withRetry(() => run('ffmpeg', args), { attempts: 3, label: 'ffmpeg-extract-fullframe' });
 }

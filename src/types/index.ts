@@ -29,13 +29,14 @@ export interface RankedClip {
   recommended_duration: number; reason: string; transcript_excerpt: string;
 }
 export interface CaptionWord { text: string; start: number; end: number; emphasized: boolean; }
+export interface FaceBox { x: number; y: number; w: number; h: number; }   // pixels in source frame
+export interface FaceSample { time: number; box: FaceBox | null; }          // null = no face that sample
+export interface CropKeyframe { time: number; cx: number; cy: number; cropW: number; cropH: number; } // crop window center + size, in source px
 export interface ClipCompositionProps {
   videoPath: string;          // path relative to remotion/public (staticFile)
   words: CaptionWord[];
   fps: number; durationInFrames: number;
   style: 'minimal' | 'card' | 'bold';
   accentColor: string; showHookCard: boolean; hookText: string;
+  cropTrack?: CropKeyframe[]; srcW?: number; srcH?: number;
 }
-export interface FaceBox { x: number; y: number; w: number; h: number; }   // pixels in source frame
-export interface FaceSample { time: number; box: FaceBox | null; }          // null = no face that sample
-export interface CropKeyframe { time: number; cx: number; cy: number; cropW: number; cropH: number; } // crop window center + size, in source px

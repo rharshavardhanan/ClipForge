@@ -1,7 +1,7 @@
 import { run } from '../utils/cmd.js';
 import { withRetry } from '../utils/retry.js';
 import { logger } from '../utils/logger.js';
-import type { CaptionWord, ClipCompositionProps } from '../types/index.js';
+import type { CaptionWord, ClipCompositionProps, CropKeyframe } from '../types/index.js';
 import { copyFile, writeFile, mkdir, rm } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
 import { probe } from '../utils/ffmpeg.js';
@@ -26,6 +26,9 @@ export async function render(opts: {
   fps: number;
   accentColor?: string;
   style?: 'minimal' | 'card' | 'bold';
+  cropTrack?: CropKeyframe[];
+  srcW?: number;
+  srcH?: number;
 }): Promise<void> {
   const p = await probe(opts.rawClipPath);
   const name = basename(opts.outPath, '.mp4') + '.mp4';
@@ -42,6 +45,9 @@ export async function render(opts: {
     accentColor: opts.accentColor ?? '#FFD700',
     showHookCard: false,
     hookText: '',
+    ...(opts.cropTrack && opts.cropTrack.length > 0 ? { cropTrack: opts.cropTrack } : {}),
+    ...(opts.srcW !== undefined ? { srcW: opts.srcW } : {}),
+    ...(opts.srcH !== undefined ? { srcH: opts.srcH } : {}),
   };
   const propsPath = join(REMOTION_DIR, `props_${name}.json`);
 

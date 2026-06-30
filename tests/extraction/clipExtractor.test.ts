@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from 'vitest';
-import { buildVideoFilter, buildExtractArgs, extractRaw } from '../../src/extraction/clipExtractor.js';
+import { buildVideoFilter, buildExtractArgs, buildFullFrameExtractArgs, extractRaw } from '../../src/extraction/clipExtractor.js';
 import { buildAudioFilter } from '../../src/extraction/audioProcessor.js';
 import { probe } from '../../src/utils/ffmpeg.js';
 import { makeTestAsset } from '../helpers/makeTestAsset.js';
@@ -26,6 +26,17 @@ describe('extraction arg builders', () => {
     const ss = args.indexOf('-ss'); const i = args.indexOf('-i');
     expect(ss).toBeLessThan(i);
     expect(args).toContain('-t');
+  });
+  it('full-frame extract args have no crop/-vf filter and keep CFR + libx264', () => {
+    const args = buildFullFrameExtractArgs('in.mp4', 12.5, 40, 'af', 'out.mp4');
+    expect(args).not.toContain('-vf');
+    expect(args.join(' ')).not.toContain('crop=');
+    expect(args).toContain('-fps_mode');
+    expect(args).toContain('cfr');
+    expect(args).toContain('libx264');
+    expect(args).toContain('-t');
+    const ss = args.indexOf('-ss'); const i = args.indexOf('-i');
+    expect(ss).toBeLessThan(i);
   });
 });
 
