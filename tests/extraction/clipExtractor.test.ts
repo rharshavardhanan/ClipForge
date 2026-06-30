@@ -14,10 +14,12 @@ describe('extraction arg builders', () => {
     expect(vf).toContain('crop=ih*9/16:ih');
     expect(vf).toContain('scale=1080:1920');
   });
-  it('already-vertical source skips crop', () => {
+  it('already-vertical source fills to 1080x1920 without letterbox', () => {
     const vf = buildVideoFilter(1080, 1920);
-    expect(vf).not.toContain('crop=');
-    expect(vf).toContain('1080:1920');
+    expect(vf).toContain('scale=1080:1920');
+    expect(vf).toContain('crop=1080:1920');   // fill-then-crop: no letterbox
+    expect(vf).not.toContain('ih*9/16');       // not the landscape center-crop
+    expect(vf).not.toContain('pad=');          // no black bars
   });
   it('extract args use input-seek -ss before -i and -t duration', () => {
     const args = buildExtractArgs('in.mp4', 12.5, 40, 'vf', 'af', 'out.mp4');

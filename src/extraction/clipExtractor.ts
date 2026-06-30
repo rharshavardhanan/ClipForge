@@ -7,8 +7,8 @@ import { dirname } from 'node:path';
 export function buildVideoFilter(width: number, height: number): string {
   const isVertical = width / height <= 9 / 16 + 0.01;
   if (isVertical) {
-    // already portrait — fit into 1080x1920, pad if needed
-    return 'scale=1080:1920:force_original_aspect_ratio=increase,pad=1080:1920:(ow-iw)/2:(oh-ih)/2,setsar=1';
+    // already portrait — fill to 1080x1920 via crop (no letterbox)
+    return 'scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1';
   }
   return 'crop=ih*9/16:ih:(iw-ih*9/16)/2:0,scale=1080:1920,setsar=1';
 }
