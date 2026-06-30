@@ -2,7 +2,8 @@ import { mkdir, mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { run } from '../utils/cmd.js';
-import type { CropKeyframe, FaceBox, FaceSample } from '../types/index.js';
+import { mouthOpenness } from './activeSpeaker.js';
+import type { CropKeyframe, FaceBox, FaceSample, FrameObs } from '../types/index.js';
 
 const MIN_CROP_H_FRACTION = 0.2; // floor for cropH as a fraction of srcH, avoids degenerate tiny windows
 const MAX_CROP_H_FRACTION = 0.9; // ceiling for cropH as a fraction of srcH, avoids ever showing the full wide shot
@@ -134,6 +135,45 @@ export async function detectFaceTrack(
   }
 }
 
+/**
+ * Samples frames from `videoPath` via ffmpeg, runs multi-face detection +
+ * 68-pt landmarks on each frame, and returns per-frame face observations
+ * (box + mouthOpenness) for every detected face. Used by the multi-subject
+ * / active-speaker path (MS1). Reuses the same sampling/cleanup approach as
+ * `detectFaceTrack`.
+ */
+export async function detectFrameObs(
+  videoPath: string,
+  srcW: number,
+  srcH: number,
+  fps = 3,
+): Promise<FrameObs[]> {
+  const dir = await mkdtemp(join(tmpdir(), 'clipforge-frameobs-'));
+  try {
+    await mkdir(dir, { recursive: true });
+    await run('ffmpeg', [
+      '-y', '-i', videoPath,
+      '-vf', `fps=${fps}`,
+      join(dir, 'f_%04d.png'),
+    ]);
+
+    const files = (await readdir(dir)).filter((f) => f.endsWith('.png')).sort();
+    if (files.length === 0) return [];
+
+    const detector = await loadMultiFaceDetector();
+    const frames: FrameObs[] = [];
+    for (let i = 0; i < files.length; i++) {
+      const buf = await readFile(join(dir, files[i]));
+      const faces = await detector.detectAllFacesWithLandmarks(buf);
+      frames.push({ time: i / fps, faces });
+    }
+
+    return frames;
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
 interface Detector {
   detectDominantFace(pngBuffer: Buffer): Promise<FaceBox | null>;
 }
@@ -187,4 +227,60 @@ async function loadDetector(): Promise<Detector> {
   };
 
   return cachedDetector;
+}
+
+interface MultiFaceDetector {
+  detectAllFacesWithLandmarks(pngBuffer: Buffer): Promise<{ box: FaceBox; mouthOpenness: number }[]>;
+}
+
+let cachedMultiFaceDetector: MultiFaceDetector | null = null;
+
+async function loadMultiFaceDetector(): Promise<MultiFaceDetector> {
+  if (cachedMultiFaceDetector) return cachedMultiFaceDetector;
+
+  const faceapi = await import('@vladmandic/face-api/dist/face-api.node-wasm.js');
+  const { PNG } = await import('pngjs');
+
+  const tf = (faceapi as any).tf;
+  await tf.setBackend('wasm');
+  await tf.ready();
+
+  // Models ship inside the package — no network fetch needed at runtime.
+  const modelPath = new URL('../../node_modules/@vladmandic/face-api/model', import.meta.url).pathname;
+  await (faceapi as any).nets.tinyFaceDetector.loadFromDisk(modelPath);
+  await (faceapi as any).nets.faceLandmark68Net.loadFromDisk(modelPath);
+
+  cachedMultiFaceDetector = {
+    async detectAllFacesWithLandmarks(pngBuffer: Buffer) {
+      const png = PNG.sync.read(pngBuffer);
+      const { width, height, data } = png;
+      const rgb = new Uint8Array(width * height * 3);
+      for (let i = 0, j = 0; i < data.length; i += 4, j += 3) {
+        rgb[j] = data[i];
+        rgb[j + 1] = data[i + 1];
+        rgb[j + 2] = data[i + 2];
+      }
+      const tensor = tf.tensor3d(rgb, [height, width, 3], 'int32');
+      try {
+        const results = await (faceapi as any)
+          .detectAllFaces(tensor, new (faceapi as any).TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.3 }))
+          .withFaceLandmarks();
+        if (!results || results.length === 0) return [];
+        return results.map((r: any) => {
+          const box: FaceBox = {
+            x: r.detection.box.x,
+            y: r.detection.box.y,
+            w: r.detection.box.width,
+            h: r.detection.box.height,
+          };
+          const positions = r.landmarks.positions.map((p: any) => ({ x: p.x, y: p.y }));
+          return { box, mouthOpenness: mouthOpenness(positions) };
+        });
+      } finally {
+        tensor.dispose();
+      }
+    },
+  };
+
+  return cachedMultiFaceDetector;
 }
