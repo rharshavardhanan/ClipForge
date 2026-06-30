@@ -13,6 +13,6 @@ export const RemotionRoot: React.FC = () => (
       videoPath: '', words: [], fps: 30, durationInFrames: 300,
       style: 'bold', accentColor: '#FFD700', showHookCard: false, hookText: '',
     } as ClipProps}
-    calculateMetadata={({ props }) => ({ durationInFrames: props.durationInFrames, fps: props.fps })}
+    calculateMetadata={({ props }) => ({ durationInFrames: props.durationInFrames ?? 300, fps: props.fps ?? 30 })}
   />
 );
