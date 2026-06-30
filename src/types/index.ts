@@ -28,6 +28,15 @@ export interface RankedClip {
   hook_moment: string; clip_titles: string[]; is_standalone: boolean;
   recommended_duration: number; reason: string; transcript_excerpt: string;
 }
+export interface SemanticScores {
+  emotional_intensity: number; controversy: number; humor: number; surprise: number;
+  wisdom: number; storytelling_tension: number; argument_peak: number; relatability: number;
+}
+export interface SemanticWindow {
+  start: number; end: number; semantic_score: number; scores: SemanticScores;
+  hook_moment: string; clip_titles: string[]; is_standalone: boolean; recommended_duration: number;
+  sentiment: 'serious' | 'funny' | 'intense' | 'neutral'; reason: string;
+}
 export interface CaptionWord { text: string; start: number; end: number; emphasized: boolean; }
 export interface FaceBox { x: number; y: number; w: number; h: number; }   // pixels in source frame
 export interface FaceSample { time: number; box: FaceBox | null; }          // null = no face that sample

@@ -12,6 +12,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
     "@tensorflow/tfjs": "^4.22.0",
     "@tensorflow/tfjs-backend-wasm": "^4.22.0",
     "@vladmandic/face-api": "^1.7.15",
