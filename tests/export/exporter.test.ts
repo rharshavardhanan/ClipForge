@@ -18,13 +18,25 @@ describe('exporter', () => {
     expect(j.clip_id).toBe('clip_001');
     expect(j.source_video).toBe('H14bBuluwB8');
     expect(j.files.final).toBe('clip_001_final.mp4');
+    expect(j.layer_scores.semantic).toBe(0);
+    expect(j.layer_scores.audio).toBe(7);
+    expect(j.layer_scores.visual).toBe(0);
     expect(j.layer_scores.trigger).toBe(9);
+    expect(j.layer_scores.pacing).toBe(0);
+    expect(j.layer_scores.metadata).toBe(0);
   });
   it('manifest aggregates clip count and scores', () => {
     const m: any = buildManifest('H14bBuluwB8', 'https://y/watch?v=H14bBuluwB8', meta, [clip]);
     expect(m.clips_generated).toBe(1);
     expect(m.top_score).toBe(8);
+    expect(m.avg_score).toBe(8);
     expect(m.title).toBe('Goggins');
     expect(m.clips).toHaveLength(1);
+  });
+  it('buildManifest handles an empty clips array without NaN/-Infinity', () => {
+    const m: any = buildManifest('job', 'src', meta, []);
+    expect(m.clips_generated).toBe(0);
+    expect(m.top_score).toBe(0);
+    expect(m.avg_score).toBe(0);
   });
 });
