@@ -96,6 +96,44 @@ describe('smoothTrack (pure)', () => {
     expect(kf.cropW).toBeCloseTo(kf.cropH * 9 / 16, 1);
   });
 
+  it('face-height-fraction 0.34: cropH ~= faceH / 0.34, subject to caps', () => {
+    // Use a single sample so EMA is a no-op (smoothed[0] = desired[0]).
+    const faceH = 200;
+    const samples: FaceSample[] = [
+      { time: 0, box: { x: 800, y: 400, w: faceH, h: faceH } },
+    ];
+    const track = smoothTrack(samples, SRC_W, SRC_H);
+    const kf = track[0];
+    const expectedCropH = faceH / 0.34; // ~588.2, within [minCropH, maxCropH]
+    expect(kf.cropH).toBeCloseTo(expectedCropH, 0);
+  });
+
+  it('cropH never exceeds 0.9 * srcH even for a tall face', () => {
+    // A very tall face would drive cropH = faceH / 0.34 far past srcH.
+    const samples: FaceSample[] = [
+      { time: 0, box: { x: 800, y: 100, w: 500, h: 900 } },
+    ];
+    const track = smoothTrack(samples, SRC_W, SRC_H);
+    const kf = track[0];
+    expect(kf.cropH).toBeLessThanOrEqual(SRC_H * 0.9 + 0.01);
+  });
+
+  it('upper-third placement: crop center sits below the face center (face lands in upper portion)', () => {
+    // Centered face, away from any source edge so clamping doesn't interfere.
+    const faceCenterY = 540;
+    const samples: FaceSample[] = [
+      { time: 0, box: { x: 900, y: faceCenterY - 100, w: 200, h: 200 } },
+    ];
+    const track = smoothTrack(samples, SRC_W, SRC_H);
+    const kf = track[0];
+    // The crop's vertical center should be below (greater Y than) the face's
+    // center, pushing the face toward the upper third of the frame.
+    expect(kf.cy).toBeGreaterThan(faceCenterY);
+    // Resulting window must still sit fully inside the source bounds.
+    expect(kf.cy - kf.cropH / 2).toBeGreaterThanOrEqual(-0.01);
+    expect(kf.cy + kf.cropH / 2).toBeLessThanOrEqual(SRC_H + 0.01);
+  });
+
   it('returns one keyframe per input sample with matching times', () => {
     const samples: FaceSample[] = [
       { time: 0, box: { x: 800, y: 300, w: 200, h: 200 } },
