@@ -50,4 +50,29 @@ describe('parseJson3', () => {
     const words = parseJson3(sample).flatMap((s) => s.words.map((w) => w.word.trim()));
     expect(words).toEqual(['A', 'B', 'C', 'D', 'E']);
   });
+
+  it('filters out [Applause]/[Music] bracket annotations', () => {
+    const raw = JSON.stringify({ events: [
+      { tStartMs: 0, segs: [{ utf8: '[Applause]', tOffsetMs: 0 }, { utf8: 'hello', tOffsetMs: 500 }, { utf8: ' world.', tOffsetMs: 900 }] },
+    ]});
+    const words = parseJson3(raw).flatMap((s) => s.words.map((w) => w.word.trim()));
+    expect(words).not.toContain('[Applause]');
+    expect(words).toEqual(['hello', 'world.']);
+  });
+
+  it('joins words with single spaces even when segs lack leading spaces', () => {
+    const raw = JSON.stringify({ events: [
+      { tStartMs: 0, segs: [{ utf8: 'very', tOffsetMs: 0 }, { utf8: 'demanding', tOffsetMs: 400 }, { utf8: ' job', tOffsetMs: 800 }] },
+    ]});
+    expect(parseJson3(raw)[0].text).toBe('very demanding job');
+  });
+
+  it('splits unpunctuated continuous captions into multiple phrase-sized segments', () => {
+    // 20 continuous words, no punctuation, ~0.3s apart -> must NOT be one mega-segment
+    const segs = Array.from({ length: 20 }, (_, i) => ({ utf8: (i === 0 ? 'w0' : ' w' + i), tOffsetMs: i * 300 }));
+    const raw = JSON.stringify({ events: [{ tStartMs: 0, segs }] });
+    const out = parseJson3(raw);
+    expect(out.length).toBeGreaterThan(1);
+    out.forEach((s) => expect(s.words.length).toBeLessThanOrEqual(12));
+  });
 });
