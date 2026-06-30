@@ -19,7 +19,7 @@ export function buildRenderArgs(propsPath: string, outPath: string): string[] {
   ];
 }
 
-export async function render(opts: {
+export interface RenderOpts {
   rawClipPath: string;
   words: CaptionWord[];
   outPath: string;
@@ -29,26 +29,34 @@ export async function render(opts: {
   cropTrack?: CropKeyframe[];
   srcW?: number;
   srcH?: number;
-}): Promise<void> {
+  hookText?: string;
+}
+
+/** PURE: builds the Remotion composition props from render opts + a probed duration. */
+export function buildProps(opts: RenderOpts, probedDurationSec: number, videoPathRel: string): ClipCompositionProps {
+  return {
+    videoPath: videoPathRel,
+    words: opts.words,
+    fps: opts.fps,
+    durationInFrames: Math.max(1, Math.round(probedDurationSec * opts.fps)),
+    style: opts.style ?? 'bold',
+    accentColor: opts.accentColor ?? '#FFD700',
+    showHookCard: Boolean(opts.hookText && opts.hookText.trim()),
+    hookText: opts.hookText ?? '',
+    ...(opts.cropTrack && opts.cropTrack.length > 0 ? { cropTrack: opts.cropTrack } : {}),
+    ...(opts.srcW !== undefined ? { srcW: opts.srcW } : {}),
+    ...(opts.srcH !== undefined ? { srcH: opts.srcH } : {}),
+  };
+}
+
+export async function render(opts: RenderOpts): Promise<void> {
   const p = await probe(opts.rawClipPath);
   const name = basename(opts.outPath, '.mp4') + '.mp4';
   const publicDir = join(REMOTION_DIR, 'public', 'input');
   await mkdir(publicDir, { recursive: true });
   const publicCopy = join(publicDir, name);
 
-  const props: ClipCompositionProps = {
-    videoPath: join('input', name),
-    words: opts.words,
-    fps: opts.fps,
-    durationInFrames: Math.max(1, Math.round(p.duration * opts.fps)),
-    style: opts.style ?? 'bold',
-    accentColor: opts.accentColor ?? '#FFD700',
-    showHookCard: false,
-    hookText: '',
-    ...(opts.cropTrack && opts.cropTrack.length > 0 ? { cropTrack: opts.cropTrack } : {}),
-    ...(opts.srcW !== undefined ? { srcW: opts.srcW } : {}),
-    ...(opts.srcH !== undefined ? { srcH: opts.srcH } : {}),
-  };
+  const props: ClipCompositionProps = buildProps(opts, p.duration, join('input', name));
   const propsPath = join(REMOTION_DIR, `props_${name}.json`);
 
   try {
