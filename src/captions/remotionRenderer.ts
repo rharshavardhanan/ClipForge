@@ -32,7 +32,6 @@ export async function render(opts: {
   const publicDir = join(REMOTION_DIR, 'public', 'input');
   await mkdir(publicDir, { recursive: true });
   const publicCopy = join(publicDir, name);
-  await copyFile(opts.rawClipPath, publicCopy);
 
   const props: ClipCompositionProps = {
     videoPath: join('input', name),
@@ -45,9 +44,10 @@ export async function render(opts: {
     hookText: '',
   };
   const propsPath = join(REMOTION_DIR, `props_${name}.json`);
-  await writeFile(propsPath, JSON.stringify(props));
 
   try {
+    await copyFile(opts.rawClipPath, publicCopy);
+    await writeFile(propsPath, JSON.stringify(props));
     await withRetry(
       () =>
         run('npx', buildRenderArgs(propsPath, resolve(opts.outPath)), {
