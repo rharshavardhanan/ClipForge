@@ -36,3 +36,6 @@ export interface ClipCompositionProps {
   style: 'minimal' | 'card' | 'bold';
   accentColor: string; showHookCard: boolean; hookText: string;
 }
+export interface FaceBox { x: number; y: number; w: number; h: number; }   // pixels in source frame
+export interface FaceSample { time: number; box: FaceBox | null; }          // null = no face that sample
+export interface CropKeyframe { time: number; cx: number; cy: number; cropW: number; cropH: number; } // crop window center + size, in source px
