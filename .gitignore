@@ -5,3 +5,4 @@ remotion/node_modules/
 remotion/public/
 .env
 *.log
+.DS_Store
