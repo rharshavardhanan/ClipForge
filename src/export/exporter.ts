@@ -12,7 +12,7 @@ export function buildClipJson(clip: RankedClip, jobId: string, files: { final: s
       trigger: clip.trigger_score, pacing: clip.pacing_score, metadata: clip.metadata_score,
     },
     hook_moment: clip.hook_moment, clip_titles: clip.clip_titles, is_standalone: clip.is_standalone,
-    recommended_duration: clip.recommended_duration, reason: clip.reason,
+    recommended_duration: clip.recommended_duration, reason: clip.reason, sentiment: clip.sentiment,
     transcript_excerpt: clip.transcript_excerpt, files,
   };
 }

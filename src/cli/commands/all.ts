@@ -8,6 +8,7 @@ import { extractMetadata } from '../../ingest/metadataExtractor.js';
 import { getTranscript } from '../../transcript/transcriptManager.js';
 import { detectTriggers } from '../../analysis/transcriptTriggers.js';
 import { analyzeAudio } from '../../analysis/audioEnergy.js';
+import { analyzeSemantic } from '../../analysis/semantic.js';
 import { scoreWindows } from '../../clipDetection/windowScorer.js';
 import { buildClips } from '../../clipDetection/merger.js';
 import { rank, defaultMinScore } from '../../clipDetection/ranker.js';
@@ -24,6 +25,13 @@ const WS = process.env.WORKSPACE_DIR ?? './workspace';
 
 export function resolveJobId(url: string): string {
   return parseVideoId(url) ?? uuidv4();
+}
+
+/** PURE: truncate a hook moment to <=8 words for the hook card, appending an ellipsis if cut. */
+export function hookCardText(s: string): string {
+  const words = s.trim().split(/\s+/).filter(Boolean);
+  if (words.length <= 8) return words.join(' ');
+  return words.slice(0, 7).join(' ') + '…';
 }
 
 export interface AllOpts { top: number; minScore?: number; style: 'minimal' | 'card' | 'bold'; accent: string; }
@@ -54,11 +62,20 @@ export async function runAll(url: string, opts: AllOpts): Promise<string> {
   const audio = await analyzeAudio(dl.videoPath);
   sp.succeed(`Analysis done — ${triggers.length} trigger hits`);
 
+  sp = ora('Analyzing semantics (Gemini)…').start();
+  const semantic = await analyzeSemantic(segments, {
+    apiKey: process.env.GEMINI_API_KEY,
+    model: process.env.GEMINI_MODEL,
+    outPath: join(dirs.analysis, 'layer_semantic.json'),
+  });
+  if (semantic.length > 0) sp.succeed(`semantic: ${semantic.length} windows`);
+  else sp.warn('semantic: unavailable → trigger+audio fallback');
+
   sp = ora('Detecting clips…').start();
-  const windows = scoreWindows(meta.duration, triggers, audio);
+  const windows = scoreWindows(meta.duration, triggers, audio, semantic);
   const threshold = opts.minScore ?? defaultMinScore(windows);
   const candidates = buildClips(windows, segments, audio, threshold, meta.duration);
-  const ranked = rank(candidates, segments, { top: opts.top, minScore: opts.minScore });
+  const ranked = rank(candidates, segments, { top: opts.top, minScore: opts.minScore }, semantic);
   sp.succeed(`Found ${candidates.length} candidates → ${ranked.length} ranked`);
 
   for (const clip of ranked) {
@@ -73,19 +90,22 @@ export async function runAll(url: string, opts: AllOpts): Promise<string> {
     await extractFullFrame(dl.videoPath, clip.start, clip.end, fullPath);
     const track = await detectFaceTrack(fullPath, meta.width, meta.height);
 
+    const hookText = clip.hook_moment ? hookCardText(clip.hook_moment) : undefined;
+
     let producedRawPath: string;
     if (track.length > 0) {
       await render({
         rawClipPath: fullPath, words: captionWords, outPath: finalPath, fps: meta.fps,
         accentColor: opts.accent, style: opts.style,
         cropTrack: track, srcW: meta.width, srcH: meta.height,
+        hookText,
       });
       producedRawPath = fullPath;
       logger.info(`[${clip.clip_id}] reframed (${track.length} face keyframes)`);
     } else {
       const rawPath = join(dirs.clips, `${clip.clip_id}_raw.mp4`);
       await extractRaw(dl.videoPath, clip.start, clip.end, { width: meta.width, height: meta.height }, rawPath);
-      await render({ rawClipPath: rawPath, words: captionWords, outPath: finalPath, fps: meta.fps, accentColor: opts.accent, style: opts.style });
+      await render({ rawClipPath: rawPath, words: captionWords, outPath: finalPath, fps: meta.fps, accentColor: opts.accent, style: opts.style, hookText });
       producedRawPath = rawPath;
       logger.info(`[${clip.clip_id}] center-crop fallback (no faces detected)`);
     }
