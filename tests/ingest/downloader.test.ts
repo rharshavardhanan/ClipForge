@@ -18,6 +18,8 @@ describe('downloader pure helpers', () => {
     expect(j).toContain('--write-info-json');
     expect(j).toContain('--no-playlist');
     expect(j).toContain('--merge-output-format mp4');
+    expect(j).toContain('--sub-langs en,en-US,en-GB,en-orig');
+    expect(j).not.toContain('en.*');
     expect(args[0]).toBe('URL');
   });
 });
