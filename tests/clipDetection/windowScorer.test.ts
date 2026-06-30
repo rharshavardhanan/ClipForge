@@ -1,10 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import { scoreWindows } from '../../src/clipDetection/windowScorer.js';
-import type { AudioEnergyLayer } from '../../src/types/index.js';
+import type { AudioEnergyLayer, SemanticWindow } from '../../src/types/index.js';
 
 const audio: AudioEnergyLayer = {
   rms_curve: Array.from({ length: 60 }, (_, t) => ({ time: t, rms: 5 })),
   silence_regions: [],
+};
+
+const baseSemanticScores = {
+  emotional_intensity: 0, controversy: 0, humor: 0, surprise: 0,
+  wisdom: 0, storytelling_tension: 0, argument_peak: 0, relatability: 0,
 };
 
 describe('scoreWindows', () => {
@@ -23,5 +28,41 @@ describe('scoreWindows', () => {
     expect(w[0].triggerScore).toBe(10);      // 18 capped to 10
     expect(w[0].audioScore).toBeCloseTo(5);
     expect(w[0].composite).toBeCloseTo(10 * 0.6 + 5 * 0.4);
+    expect(w[0].semanticScore).toBe(0);
+  });
+
+  it('applies the 0.5/0.3/0.2 semantic-dominant composite when semantic windows are present', () => {
+    const triggers = [{ time: 5, weight: 9, phrase: 'x', tier: 1 as const }, { time: 6, weight: 9, phrase: 'y', tier: 1 as const }];
+    const semantic: SemanticWindow[] = [
+      {
+        start: 0, end: 30, semantic_score: 8, scores: baseSemanticScores,
+        hook_moment: 'wow', clip_titles: [], is_standalone: true, recommended_duration: 60,
+        sentiment: 'intense', reason: 'big moment',
+      },
+    ];
+    const w = scoreWindows(60, triggers, audio, semantic);
+    expect(w[0].triggerScore).toBe(10);
+    expect(w[0].audioScore).toBeCloseTo(5);
+    expect(w[0].semanticScore).toBe(8);
+    expect(w[0].composite).toBeCloseTo(8 * 0.5 + 5 * 0.3 + 10 * 0.2);
+  });
+
+  it('finds the semantic window with max overlap, not just the first match', () => {
+    const semantic: SemanticWindow[] = [
+      {
+        start: 0, end: 16, semantic_score: 2, scores: baseSemanticScores,
+        hook_moment: '', clip_titles: [], is_standalone: true, recommended_duration: 60,
+        sentiment: 'neutral', reason: '',
+      },
+      {
+        start: 10, end: 40, semantic_score: 9, scores: baseSemanticScores,
+        hook_moment: '', clip_titles: [], is_standalone: true, recommended_duration: 60,
+        sentiment: 'neutral', reason: '',
+      },
+    ];
+    // window[1] is start=15,end=45 — overlaps [10,40) by 25s vs [0,16) by 1s, so the bigger-overlap window (score 9) wins.
+    const w = scoreWindows(60, [], audio, semantic);
+    expect(w[1].start).toBe(15);
+    expect(w[1].semanticScore).toBe(9);
   });
 });
