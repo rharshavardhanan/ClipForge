@@ -1,0 +1,65 @@
+import { run } from '../utils/cmd.js';
+import { withRetry } from '../utils/retry.js';
+import { logger } from '../utils/logger.js';
+import type { CaptionWord, ClipCompositionProps } from '../types/index.js';
+import { copyFile, writeFile, mkdir, rm } from 'node:fs/promises';
+import { basename, join, resolve } from 'node:path';
+import { probe } from '../utils/ffmpeg.js';
+
+const REMOTION_DIR = resolve('remotion');
+
+export function buildRenderArgs(propsPath: string, outPath: string): string[] {
+  return [
+    'remotion', 'render', 'src/index.ts', 'CaptionedClip',
+    `--props=${propsPath}`,
+    `--output=${outPath}`,
+    '--codec=h264',
+    '--crf=18',
+    '--pixel-format=yuv420p',
+  ];
+}
+
+export async function render(opts: {
+  rawClipPath: string;
+  words: CaptionWord[];
+  outPath: string;
+  fps: number;
+  accentColor?: string;
+  style?: 'minimal' | 'card' | 'bold';
+}): Promise<void> {
+  const p = await probe(opts.rawClipPath);
+  const name = basename(opts.outPath, '.mp4') + '.mp4';
+  const publicDir = join(REMOTION_DIR, 'public', 'input');
+  await mkdir(publicDir, { recursive: true });
+  const publicCopy = join(publicDir, name);
+  await copyFile(opts.rawClipPath, publicCopy);
+
+  const props: ClipCompositionProps = {
+    videoPath: join('input', name),
+    words: opts.words,
+    fps: opts.fps,
+    durationInFrames: Math.max(1, Math.round(p.duration * opts.fps)),
+    style: opts.style ?? 'bold',
+    accentColor: opts.accentColor ?? '#FFD700',
+    showHookCard: false,
+    hookText: '',
+  };
+  const propsPath = join(REMOTION_DIR, `props_${name}.json`);
+  await writeFile(propsPath, JSON.stringify(props));
+
+  try {
+    await withRetry(
+      () =>
+        run('npx', buildRenderArgs(propsPath, resolve(opts.outPath)), {
+          cwd: REMOTION_DIR,
+          onStdout: (l) => {
+            if (l.includes('Rendered')) logger.info(l.trim());
+          },
+        }),
+      { attempts: 2, label: 'remotion' },
+    );
+  } finally {
+    await rm(publicCopy, { force: true });
+    await rm(propsPath, { force: true });
+  }
+}

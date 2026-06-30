@@ -3,10 +3,10 @@ import { spawn } from 'node:child_process';
 export function run(
   cmd: string,
   args: string[],
-  opts: { onStderr?: (line: string) => void; onStdout?: (line: string) => void } = {},
+  opts: { onStderr?: (line: string) => void; onStdout?: (line: string) => void; cwd?: string } = {},
 ): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(cmd, args, { cwd: opts.cwd, stdio: ['ignore', 'pipe', 'pipe'] });
     let stdout = '';
     let stderr = '';
     child.stdout.on('data', (d: Buffer) => {
