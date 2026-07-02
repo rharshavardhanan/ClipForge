@@ -1,6 +1,6 @@
 # ClipForge
 
-ClipForge is a local-first viral short-form clip engine. Feed it a YouTube URL and it automatically downloads the video, extracts a word-level transcript, scores candidate clip windows using audio energy and linguistic trigger analysis, slices the top clips, burns karaoke-style captions in a 9:16 frame, and exports a ready-to-post `_final.mp4` — all on your own machine, no cloud APIs required in Slice 1.
+ClipForge is a local-first AI short-form video **editor engine** — not a clip extractor. Feed it YouTube URLs or local video files and it finds the strongest moments (semantic scoring + audio energy + linguistic triggers + viewer-flagged comment timestamps), reframes them to 9:16 with face-tracked pan/zoom, burns preset-styled karaoke captions, lays a mood-matched ducked music bed underneath, adds sparing punch zooms, and exports ready-to-post finals. Point it at several videos and it cross-ranks the best moments into one leaderboard — and can stitch them into a **#N→#1 countdown ranking video** with rank cards and badges. All processing runs on your machine; only the optional Gemini semantic-scoring calls leave it.
 
 ---
 
@@ -11,23 +11,26 @@ ClipForge is a local-first viral short-form clip engine. Feed it a YouTube URL a
 | macOS | Tested on macOS 14+. Linux should work but is untested. |
 | Node 24 | Required. Use `nvm use 24` or install from [nodejs.org](https://nodejs.org). |
 | ffmpeg + ffprobe | `brew install ffmpeg` |
-| yt-dlp | `brew install yt-dlp` |
-| whisper-cpp | Optional. Only needed when a video has no auto-generated captions. |
+| yt-dlp | `brew install yt-dlp` — not needed for local-file input |
+| whisper-cpp | Optional. Needed for local files and videos without auto-captions. |
 
-> **Remotion** (Chromium-based renderer) runs from the `remotion/` sub-package — see Install below.
+> **Remotion** (Chromium-based renderer) runs from the `remotion/` sub-package; the **GUI** runs from the `ui/` sub-package — see Install.
 
 ---
 
 ## Install
 
 ```bash
-# 1. Install root dependencies
+# 1. Root dependencies
 npm install
 
-# 2. Install Remotion renderer dependencies
+# 2. Remotion renderer dependencies
 cd remotion && npm install && cd ..
 
-# 3. Build TypeScript
+# 3. GUI dependencies (optional — only for `clipforge ui`)
+cd ui && npm install && cd ..
+
+# 4. Build TypeScript
 npm run build
 ```
 
@@ -36,147 +39,149 @@ npm run build
 ## Quick Start
 
 ```bash
+# One video → top clips
 node dist/cli/index.js all "https://www.youtube.com/watch?v=H14bBuluwB8"
-```
 
-ClipForge will preflight-check your tools, download the video, find the top 3 clips, and export them to `workspace/exports/H14bBuluwB8/`.
+# A local recording (transcript via whisper-cpp)
+node dist/cli/index.js process ~/Videos/podcast_ep12.mp4
+
+# Several videos → one cross-ranked leaderboard + countdown ranking video
+node dist/cli/index.js batch URL1 URL2 URL3 --top 5 --ranking
+
+# The GUI
+node dist/cli/index.js ui        # → http://localhost:3210
+```
 
 ---
 
-## Commands (Slice 1)
+## Commands
 
-### `all <url>` — full pipeline
+| Command | What it does |
+|---------|--------------|
+| `all <input>` | Full pipeline for one YouTube URL **or local file** |
+| `process <file>` | Same pipeline, local video file only |
+| `ingest <url>` | Download + transcript only (pre-cache / debugging) |
+| `batch <inputs...>` | Analyze N videos, rank the best moments **across all of them**, export the global top-N. Accepts URLs, file paths, or one `.txt` with one input per line |
+| `rank <exportsDir>` | Render `ranking_final.mp4` (#N→#1 countdown) from an existing export dir |
+| `ui` | Launch the local GUI (Import / Clips / Style / Rank / Export tabs) |
 
-```
-node dist/cli/index.js all <url> [options]
-
-Options:
-  --top <n>          Maximum number of clips to export  (default: 3)
-  --min-score <x>    Absolute composite score floor     (default: auto)
-  --style <s>        Caption style: minimal | card | bold  (default: bold)
-  --accent <hex>     Accent colour for karaoke highlight   (default: #FFD700)
-```
-
-### `ingest <url>` — download + transcript only
+### Shared options (`all`, `process`, `batch`)
 
 ```
-node dist/cli/index.js ingest <url>
+--top <n>              max clips to export             (all/process: 3, batch: 5)
+--min-score <x>        absolute composite floor        (default: auto)
+--style <preset>       mrbeast | hormozi | gadzhi | gaming | podcast |
+                       cinematic | minimal | card | bold        (default: bold)
+--accent <hex>         accent / active-word color      (default: #FFD700)
+--font <name>          anton|bangers|archivo|montserrat|poppins|inter
+--font-size <px>       caption size override
+--caption-color <hex>  caption base color override
+--stroke <px>          caption stroke width override
+--position <p>         bottom | center
+--no-music             disable the background music bed
+--music-volume <v>     music level 0-1 before ducking  (default: 0.25)
+--music-dir <p>        music library folder            (default: ./music)
+--no-zooms             disable punch zooms on emphasized moments
 ```
 
-Runs just the download + transcript stages and exits. Useful for pre-caching or debugging the caption pipeline separately.
+`batch` adds `--per-video-cap <n>` (stop one video monopolizing the leaderboard) and `--ranking` (render the countdown video after export). `rank` takes `--accent` and `--card-seconds`.
+
+---
+
+## Music library
+
+Drop royalty-free tracks into `./music`, tagged by mood either as subfolders or filename prefixes:
+
+```
+music/
+  intense/drums.mp3          # subfolder convention
+  funny_kazoo.mp3            # prefix convention
+  motivational/rise.mp3
+  chill/lofi.mp3             # fallback mood
+```
+
+Moods: `intense · funny · motivational · suspense · emotional · chill`. Each clip's Gemini sentiment picks the mood (funny→funny, intense→intense, serious→motivational, neutral→chill); the bed is looped/trimmed, faded, and **sidechain-ducked under speech**. No matching track → the clip ships without music.
+
+---
+
+## GUI
+
+`node dist/cli/index.js ui` starts a local Next.js app (default port 3210):
+
+- **Import** — paste URLs / file paths (multi-line = batch), pick top-N, run; live log stream.
+- **Clips** — preview every exported final (with captions/music), score & sentiment badges, `.srt`/`.json`/raw downloads.
+- **Style** — preset gallery + accent color, music and punch-zoom toggles; applies to Import runs.
+- **Rank** — render/re-render the #N→#1 countdown video for any multi-clip export.
+- **Export** — every export's path, one click to copy.
+
+The GUI shells out to the same CLI (`dist/cli/index.js`), so behavior is identical to the terminal.
 
 ---
 
 ## Output Files
 
-All outputs land in `workspace/exports/<jobId>/`:
+All outputs land in `workspace/exports/<jobId>/` (batches: `workspace/exports/batch_<hash>/`):
 
 | File | Description |
 |------|-------------|
-| `clip_NNN_final.mp4` | 9:16 (1080×1920) Remotion-rendered clip with karaoke captions |
-| `clip_NNN_raw.mp4` | Raw 16:9 extract before reframe/captions |
+| `clip_NNN_final.mp4` | 9:16 (1080×1920) final — reframed, captioned, music bed, punch zooms |
+| `clip_NNN_raw.mp4` | Raw extract before reframe/captions |
 | `clip_NNN.srt` | Word-level SRT subtitle file |
-| `clip_NNN.json` | Per-clip metadata: scores, timing, transcript excerpt |
-| `clips_manifest.json` | Job-level summary: all clips, scores, titles |
+| `clip_NNN.json` | Per-clip metadata: layer scores, timing, transcript excerpt |
+| `clips_manifest.json` | Job-level summary (batches record each clip's source video) |
+| `ranking_final.mp4` | #N→#1 countdown video (`--ranking` or `rank` command) |
 
 ---
 
 ## Configuration
 
-Create a `.env` file in the project root (all keys optional in Slice 1):
+Create a `.env` in the project root (everything optional — without Gemini keys the scorer falls back to audio+trigger analysis):
 
 ```env
-# Gemini API key — unused in Slice 1; reserved for semantic scoring in Slice 2
+# Gemini semantic scoring — one key, or several to multiply free-tier quota
 GEMINI_API_KEY=
+GEMINI_API_KEYS=key1,key2,key3
+GEMINI_MODEL=gemini-2.5-flash
 
-# Override workspace root (default: ./workspace)
+# Paths
 WORKSPACE_DIR=./workspace
+MUSIC_DIR=./music
 
-# Log verbosity: error | warn | info | debug  (default: info)
+# Log verbosity: error | warn | info | debug
 LOG_LEVEL=info
 ```
-
----
-
-## FAQ
-
-**Why no Python in Slice 1?**
-YouTube's json3 auto-captions plus ffmpeg provide word-level timing with zero Python. whisper-cpp (a native binary) handles the fallback when captions are absent. The full ML stack — librosa, OpenCV, MediaPipe, diarization — lands in later slices inside an isolated Python 3.11 venv so the Node runtime stays fast and dependency-free for the common case.
-
-**Can I run it offline after download?**
-Yes. After the initial `yt-dlp` download completes, the transcript, analysis, clip detection, caption, and render stages are entirely local — no network calls, no cloud APIs in Slice 1.
-
-**How long does it take per hour of video?**
-Rough benchmarks on an M2 MacBook Pro:
-- Download + json3 transcript: ~1–3 min depending on resolution and bandwidth.
-- Analysis + clip detection: < 5 s (pure CPU, no ML).
-- Remotion render per clip: ~20–60 s (Chromium headless, depends on clip length).
-- Total for a 1-hour video with 3 clips: roughly 5–10 min.
 
 ---
 
 ## Architecture
 
 ```
-YouTube URL
+inputs (YouTube URLs / local files)
     │
     ▼
-┌─────────────────────────────────────────────────────────┐
-│  Ingest (yt-dlp)                                        │
-│  Download video.mp4 + .info.json + .json3 captions      │
-└──────────────────────────┬──────────────────────────────┘
-                           │
-                           ▼
-┌─────────────────────────────────────────────────────────┐
-│  Transcript                                             │
-│  json3 → word-level timing  (whisper-cpp fallback)      │
-└──────────────────────────┬──────────────────────────────┘
-                           │
-                           ▼
-┌─────────────────────────────────────────────────────────┐
-│  Analysis                                               │
-│  Audio energy (RMS + silence)  ×  Transcript triggers   │
-└──────────────────────────┬──────────────────────────────┘
-                           │
-                           ▼
-┌─────────────────────────────────────────────────────────┐
-│  Clip Detection                                         │
-│  Sliding window scoring → boundary snap → merge/rank    │
-└──────────────────────────┬──────────────────────────────┘
-                           │
-                           ▼
-┌─────────────────────────────────────────────────────────┐
-│  Extraction                                             │
-│  ffmpeg segment cut → clip_NNN_raw.mp4  (loudnorm)      │
-└──────────────────────────┬──────────────────────────────┘
-                           │
-                           ▼
-┌─────────────────────────────────────────────────────────┐
-│  Captions                                               │
-│  Build caption words → .srt  (karaoke highlight)        │
-└──────────────────────────┬──────────────────────────────┘
-                           │
-                           ▼
-┌─────────────────────────────────────────────────────────┐
-│  Export (Remotion)                                      │
-│  9:16 reframe + captions → clip_NNN_final.mp4           │
-│  clip_NNN.json + clips_manifest.json                    │
-└─────────────────────────────────────────────────────────┘
+Ingest ──── yt-dlp download + info.json + json3 captions + top-100 comments
+    │        (local files: copy into workspace, whisper transcript)
+    ▼
+Transcript ─ json3 word timing → whisper-cpp fallback
+    │
+    ▼
+Analysis ── audio energy (RMS/silence) × linguistic triggers
+    │        × Gemini semantic windows × comment-timestamp boosts
+    ▼
+Clip detection ─ sliding-window composite → boundary snap → merge/rank
+    │             (batch: pool candidates, rank globally across videos)
+    ▼
+Extraction ── full-frame cut → multi-face detection → active-speaker
+    │           crop-track → zero-lag smoothing
+    ▼
+Render (Remotion) ── 9:16 reframe + preset captions + hook card
+    │                 + punch zooms  → clip_NNN_final.mp4
+    ▼
+Music ── mood-matched bed, looped/faded, sidechain-ducked under speech
+    │
+    ▼
+Exports ── clips + srt + json + manifest   (+ ranking_final.mp4 countdown)
 ```
-
----
-
-## Slice Roadmap
-
-| Slice | Scope |
-|-------|-------|
-| **1 (this)** | Full skeleton: ingest → transcript → analysis → detection → extraction → captions → export. json3 captions, audio energy, linguistic triggers, Remotion 9:16 render. |
-| 2 | Gemini semantic scoring, hook-card generation, hook prompt integration. |
-| 3 | librosa beat/laughter/music detection, full audio layer. |
-| 4 | OpenCV/MediaPipe visual saliency, pacing layer, smart-cut, subject reframing. |
-| 5 | Diarization, multi-speaker captions, profanity filter. |
-| 6 | Job/resume system, batch mode, progress persistence. |
-| 7 | Polish: web UI, thumbnail generation, TikTok/Reels/Shorts direct upload. |
 
 ---
 
@@ -191,6 +196,10 @@ RUN_E2E=1 npx vitest run tests/e2e/pipeline.e2e.test.ts
 ```
 
 ---
+
+## Known deferrals
+
+Speaker diarization / split-speaker framing, librosa-grade audio features (laughter/beat detection), replay-graph signals, and a queue/DB job system (stage-level workspace caching already gives resumability) are intentionally not in this build.
 
 ## License
 
