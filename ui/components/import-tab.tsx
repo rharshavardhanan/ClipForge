@@ -10,6 +10,7 @@ export function ImportTab({ style, onFinished }: { style: StyleConfig; onFinishe
   const [inputsText, setInputsText] = useState('');
   const [top, setTop] = useState(3);
   const [ranking, setRanking] = useState(false);
+  const [deleteSource, setDeleteSource] = useState(false);
   const [runId, setRunId] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState('');
@@ -46,7 +47,7 @@ export function ImportTab({ style, onFinished }: { style: StyleConfig; onFinishe
           style: style.preset, accent: style.accent, music: style.music, zooms: style.zooms,
           font: style.font, fontSize: style.fontSize, position: style.position,
           stroke: style.stroke, captionColor: style.captionColor,
-          ranking,
+          ranking, deleteSource,
         }),
       });
       const body = await res.json();
@@ -109,6 +110,11 @@ export function ImportTab({ style, onFinished }: { style: StyleConfig; onFinishe
           <label className={`flex cursor-pointer items-center gap-2.5 rounded-xl border border-line px-3.5 py-2.5 text-sm transition-colors ${inputs.length > 1 ? 'text-zinc-200 hover:border-zinc-600' : 'cursor-not-allowed text-zinc-600'}`}>
             <input type="checkbox" checked={ranking} disabled={inputs.length < 2} onChange={(e) => setRanking(e.target.checked)} className="h-4 w-4 accent-gold" />
             Render #N → #1 ranking video
+          </label>
+
+          <label className="flex cursor-pointer items-center gap-2.5 rounded-xl border border-line px-3.5 py-2.5 text-sm text-zinc-200 transition-colors hover:border-zinc-600" title="Removes the multi-GB source download and intermediate extracts once clips are exported.">
+            <input type="checkbox" checked={deleteSource} onChange={(e) => setDeleteSource(e.target.checked)} className="h-4 w-4 accent-gold" />
+            Delete source after export
           </label>
 
           <div className="ml-auto flex items-center gap-4">
