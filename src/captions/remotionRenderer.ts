@@ -34,6 +34,8 @@ export interface RenderOpts {
   caption?: CaptionStyle;
   zooms?: boolean;
   framing?: 'blur' | 'crop';
+  /** Arrow callouts pointing at the speaker's face on peak moments (output px). */
+  callouts?: { time: number; x: number; y: number }[];
 }
 
 /** PURE: builds the Remotion composition props from render opts + a probed duration. */
@@ -52,6 +54,7 @@ export function buildProps(opts: RenderOpts, probedDurationSec: number, videoPat
     ...(opts.srcH !== undefined ? { srcH: opts.srcH } : {}),
     ...(opts.caption ? { caption: opts.caption } : {}),
     ...(opts.framing ? { framing: opts.framing } : {}),
+    ...(opts.callouts && opts.callouts.length > 0 ? { callouts: opts.callouts } : {}),
     zooms: opts.zooms ?? true,
   };
 }

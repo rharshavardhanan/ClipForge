@@ -1,6 +1,7 @@
 import { AbsoluteFill, OffthreadVideo, staticFile, useCurrentFrame, useVideoConfig } from 'remotion';
 import { CaptionTrack } from './Caption';
 import { HookCard } from './HookCard';
+import { Callouts, type CalloutSpec } from './Callout';
 import type { CaptionWord } from './captionLogic';
 import { reframeStyle, type CropKeyframe } from './reframe';
 import type { CaptionStyle } from './captionStyle';
@@ -16,10 +17,12 @@ export type ClipProps = {
   /** 'blur' = original video centered over a blurred backdrop (default, natural, no face cutting).
    *  'crop' = smart face-crop pan/zoom via cropTrack. */
   framing?: 'blur' | 'crop';
+  /** Arrow callouts pointing at the speaker's face on peak moments (output px). */
+  callouts?: CalloutSpec[];
 };
 
 export const CaptionedClip: React.FC<ClipProps> = ({
-  videoPath, words, accentColor, showHookCard, hookText, cropTrack, srcW, srcH, caption, zooms, framing,
+  videoPath, words, accentColor, showHookCard, hookText, cropTrack, srcW, srcH, caption, zooms, framing, callouts,
 }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
@@ -53,6 +56,7 @@ export const CaptionedClip: React.FC<ClipProps> = ({
           </AbsoluteFill>
         </>
       )}
+      {callouts && callouts.length > 0 && <Callouts callouts={callouts} accent={accentColor} />}
       {showHookCard && <HookCard text={hookText} />}
       <CaptionTrack words={words} accentColor={accentColor} caption={caption} />
     </AbsoluteFill>

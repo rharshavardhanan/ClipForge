@@ -66,6 +66,8 @@ export interface ClipCompositionProps {
   zooms?: boolean;
   /** Base framing: 'blur' (default) or 'crop' (smart face-crop via cropTrack). */
   framing?: 'blur' | 'crop';
+  /** Arrow callouts at the speaker's face on peak moments — mirrors remotion/src/Callout.tsx. */
+  callouts?: { time: number; x: number; y: number }[];
 }
 
 // Ranking video render mode (RV1/RV2) — mirrors remotion/src/rankingLogic.ts
