@@ -1,0 +1,88 @@
+/**
+ * Server-side workspace reader. The UI runs from ui/ with the repo root one level up;
+ * WORKSPACE_DIR / REPO_ROOT env vars override for non-standard layouts.
+ */
+import { readdir, readFile, stat } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
+
+export const REPO_ROOT = process.env.REPO_ROOT ?? resolve(process.cwd(), '..');
+export const WORKSPACE_DIR = process.env.WORKSPACE_DIR ?? join(REPO_ROOT, 'workspace');
+
+export interface ClipInfo {
+  clipId: string;
+  rank: number;
+  score: number;
+  title: string;
+  hook: string;
+  excerpt: string;
+  sentiment?: string;
+  sourceVideo?: string;
+  duration: number;
+  files: { final: string; raw: string; srt: string; json: string };
+}
+
+export interface ExportJob {
+  id: string;
+  title: string;
+  source: string;
+  processedAt: string;
+  clipCount: number;
+  hasRanking: boolean;
+  clips: ClipInfo[];
+}
+
+export async function listExports(): Promise<ExportJob[]> {
+  const root = join(WORKSPACE_DIR, 'exports');
+  let dirs: string[];
+  try {
+    dirs = await readdir(root);
+  } catch {
+    return [];
+  }
+
+  const jobs: ExportJob[] = [];
+  for (const id of dirs) {
+    const dir = join(root, id);
+    try {
+      if (!(await stat(dir)).isDirectory()) continue;
+      const manifest = JSON.parse(await readFile(join(dir, 'clips_manifest.json'), 'utf8'));
+      const hasRanking = await stat(join(dir, 'ranking_final.mp4')).then(() => true).catch(() => false);
+      jobs.push({
+        id,
+        title: manifest.title ?? id,
+        source: manifest.source ?? '',
+        processedAt: manifest.processed_at ?? '',
+        clipCount: manifest.clips_generated ?? manifest.clips?.length ?? 0,
+        hasRanking,
+        clips: (manifest.clips ?? []).map((c: any) => ({
+          clipId: c.clip_id,
+          rank: c.rank,
+          score: c.composite_score,
+          title: c.clip_titles?.[0] ?? '',
+          hook: c.hook_moment ?? '',
+          excerpt: c.transcript_excerpt ?? '',
+          sentiment: c.sentiment,
+          sourceVideo: c.source_video,
+          duration: c.duration ?? 0,
+          files: {
+            final: `${c.clip_id}_final.mp4`,
+            raw: `${c.clip_id}_raw.mp4`,
+            srt: `${c.clip_id}.srt`,
+            json: `${c.clip_id}.json`,
+          },
+        })),
+      });
+    } catch {
+      // dir without a complete manifest (interrupted job) — skip
+    }
+  }
+  jobs.sort((a, b) => (b.processedAt || '').localeCompare(a.processedAt || ''));
+  return jobs;
+}
+
+export function exportFilePath(jobId: string, file: string): string {
+  // basename-only guard against path traversal
+  const safeJob = jobId.replace(/[^A-Za-z0-9_-]/g, '');
+  const safeFile = file.replace(/[^A-Za-z0-9._-]/g, '');
+  return join(WORKSPACE_DIR, 'exports', safeJob, safeFile);
+}

@@ -7,6 +7,7 @@ import { checkDependencies } from './preflight.js';
 import { runAll, runBatch } from './commands/all.js';
 import { runIngest } from './commands/ingest.js';
 import { runRankingRender } from './commands/rank.js';
+import { runUi } from './commands/ui.js';
 import { resolveCaptionStyle } from '../captions/presets.js';
 import { isLocalInput } from '../ingest/localFile.js';
 import { logger } from '../utils/logger.js';
@@ -115,6 +116,14 @@ addRenderOptions(
       const exportsDir = await runBatch(resolved, { ...renderOpts(o), perVideoCap: o.perVideoCap });
       if (o.ranking) await runRankingRender(exportsDir, { accent: o.accent, cardSec: 1.5 });
     } catch (e) { logger.error((e as Error).stack ?? String(e)); process.exit(1); }
+  });
+
+program.command('ui')
+  .description('Launch the local GUI (Next.js) — import, preview, style, rank, export')
+  .option('--port <n>', 'port', (v) => parseInt(v, 10), 3210)
+  .action(async (o) => {
+    try { await runUi(o.port); }
+    catch (e) { logger.error((e as Error).message); process.exit(1); }
   });
 
 program.command('rank')
