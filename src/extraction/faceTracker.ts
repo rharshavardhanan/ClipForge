@@ -290,22 +290,23 @@ export async function planFraming(
   srcW: number,
   srcH: number,
   fps = 3,
-): Promise<{ mode: FramingMode; track: CropKeyframe[] }> {
+): Promise<{ mode: FramingMode; track: CropKeyframe[]; faces: FaceSample[] }> {
   const frames = await detectFrameObs(videoPath, srcW, srcH, fps);
-  if (frames.length === 0) return { mode: 'blur', track: [] };
+  if (frames.length === 0) return { mode: 'blur', track: [], faces: [] };
 
   const tracks = associateTracks(frames, srcW * TRACK_ASSOCIATION_DIST_FRACTION);
   const signal = summarizeFraming(tracks, frames.length, srcW, srcH);
   const mode = chooseFramingMode(signal);
 
-  if (mode === 'crop' && tracks.length > 0) {
-    // Crop only ever targets ONE person (blur handles multi-face), so track the biggest.
-    const dominant = [...tracks].sort((a, b) => b.samples.length - a.samples.length)[0];
-    const samples: FaceSample[] = dominant.samples.map((s) => ({ time: s.time, box: s.box }));
-    const track = smoothTrack(samples, srcW, srcH);
-    if (track.length > 0) return { mode: 'crop', track };
+  // Dominant face samples power the arrow callouts (and thumbnail zoom) in BOTH modes.
+  const dominant = tracks.length > 0 ? [...tracks].sort((a, b) => b.samples.length - a.samples.length)[0] : null;
+  const faces: FaceSample[] = dominant ? dominant.samples.map((s) => ({ time: s.time, box: s.box })) : [];
+
+  if (mode === 'crop' && dominant) {
+    const track = smoothTrack(faces, srcW, srcH);
+    if (track.length > 0) return { mode: 'crop', track, faces };
   }
-  return { mode: 'blur', track: [] };
+  return { mode: 'blur', track: [], faces };
 }
 
 /**

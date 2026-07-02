@@ -21,6 +21,8 @@ import { sentimentColor } from '../../captions/sentimentColor.js';
 import { writeSrt } from '../../captions/srtGenerator.js';
 import { extractFullFrame } from '../../extraction/clipExtractor.js';
 import { planFraming } from '../../extraction/faceTracker.js';
+import { planCallouts, faceAt } from '../../extraction/callouts.js';
+import { buildZoomSfxTimes } from '../../sfx/events.js';
 import { render } from '../../captions/remotionRenderer.js';
 import { scanLibrary, pickTrack, sentimentToMood } from '../../music/library.js';
 import { mixMusic } from '../../music/mixer.js';
@@ -267,18 +269,26 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
       // 'blur' centers it over a blurred backdrop. Blur is the default (natural, no face cutting).
       const fullPath = join(clipsDir, `${clip.clip_id}_full.mp4`);
       await extractFullFrame(source.videoPath, clip.start, clip.end, fullPath);
-      const { mode, track } = await planFraming(fullPath, source.meta.width, source.meta.height);
+      const { mode, track, faces } = await planFraming(fullPath, source.meta.width, source.meta.height);
 
       const hookText = clip.hook_moment ? hookCardText(clip.hook_moment) : undefined;
       const accentColor = sentimentColor(clip.sentiment, opts.accent);
+
+      // Arrow callouts at the speaker's face on the same peak moments the zooms hit.
+      const callouts = opts.zooms === false ? [] : planCallouts(
+        buildZoomSfxTimes(captionWords), faces,
+        { mode, track, srcW: source.meta.width, srcH: source.meta.height },
+      );
 
       await render({
         rawClipPath: fullPath, words: captionWords, outPath: finalPath, fps: source.meta.fps,
         accentColor, style: legacyStyle(opts.style), caption: opts.caption, zooms: opts.zooms,
         framing: mode,
         ...(mode === 'crop' ? { cropTrack: track, srcW: source.meta.width, srcH: source.meta.height } : {}),
+        ...(callouts.length > 0 ? { callouts } : {}),
         hookText,
       });
+      if (callouts.length > 0) logger.info(`[${clip.clip_id}] ${callouts.length} arrow callout(s)`);
       logger.info(mode === 'crop'
         ? `[${clip.clip_id}] smart-crop (${track.length} face keyframes)`
         : `[${clip.clip_id}] blur-background framing`);
@@ -308,7 +318,17 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
       // Never fail a fully-rendered clip over a PNG — warn and move on.
       try {
         const thumbRel = Math.max(0, pickThumbnailTime(clip, source.audio.rms_curve) - clip.start);
-        await generateThumbnail(fullPath, thumbRel, pack.thumbnailText, join(exportsDir, `${clip.clip_id}_thumbnail.png`));
+        // Zoom the thumbnail toward the face nearest the chosen moment (looser 2s tolerance).
+        const thumbFace = faceAt(faces, thumbRel, 2);
+        await generateThumbnail(fullPath, thumbRel, pack.thumbnailText, join(exportsDir, `${clip.clip_id}_thumbnail.png`), {
+          accent: accentColor,
+          ...(thumbFace?.box ? {
+            face: {
+              x: (thumbFace.box.x + thumbFace.box.w / 2) / source.meta.width,
+              y: (thumbFace.box.y + thumbFace.box.h / 2) / source.meta.height,
+            },
+          } : {}),
+        });
       } catch (e) {
         logger.warn(`[${clip.clip_id}] thumbnail failed (clip export continues): ${e instanceof Error ? e.message : String(e)}`);
       }
