@@ -51,9 +51,19 @@ if [ "${1:-}" = "--setup" ]; then
   exit 0
 fi
 
+# Keep the Mac awake while ClipForge runs so long renders/batches aren't paused by
+# display or idle sleep. `caffeinate -dimsu` covers display+disk+idle+system(on AC)+user-active.
+# NOTE: closing the laptop lid still sleeps on battery — keep it plugged in (or lid open)
+# for unattended overnight runs. Set CLIPFORGE_NO_CAFFEINATE=1 to opt out.
+KEEP_AWAKE=()
+if [ "${CLIPFORGE_NO_CAFFEINATE:-}" != "1" ] && [ "$(uname)" = "Darwin" ] && command -v caffeinate >/dev/null; then
+  KEEP_AWAKE=(caffeinate -dimsu)
+  say "Keeping the Mac awake while ClipForge runs (caffeinate) ${dim}— plug in for lid-closed runs${reset}"
+fi
+
 if [ $# -eq 0 ]; then
   say "Starting ClipForge GUI → http://localhost:3210  ${dim}(Ctrl-C to stop)${reset}"
-  exec node dist/cli/index.js ui
+  exec "${KEEP_AWAKE[@]}" node dist/cli/index.js ui
 else
-  exec node dist/cli/index.js "$@"
+  exec "${KEEP_AWAKE[@]}" node dist/cli/index.js "$@"
 fi
