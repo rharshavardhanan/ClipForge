@@ -15,6 +15,7 @@ import { analyzeSemanticAuto, pickSemanticProvider } from '../../analysis/semant
 import { scoreWindows } from '../../clipDetection/windowScorer.js';
 import { buildClips } from '../../clipDetection/merger.js';
 import { rank, defaultMinScore } from '../../clipDetection/ranker.js';
+import { loadUsedRanges, appendUsedRanges, filterUsedCandidates } from '../../clipDetection/usedRanges.js';
 import { buildCaptionWords } from '../../captions/captionWords.js';
 import { sentimentColor } from '../../captions/sentimentColor.js';
 import { writeSrt } from '../../captions/srtGenerator.js';
@@ -75,6 +76,8 @@ export interface AllOpts {
   sfxDir?: string;
   /** Delete the downloaded source video + clip intermediates after a successful export (frees disk). */
   deleteSource?: boolean;
+  /** Allow re-exporting moments already used by previous runs of the same video. Default false. */
+  allowRepeats?: boolean;
 }
 
 /** PURE: files/dirs to remove when --delete-source is set — the big source download and the
@@ -209,9 +212,23 @@ export function rankAcrossAnalyses(
  */
 export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): Promise<string> {
   // Per-analysis rank (within-video dedup + semantic attachment), tag each with its source.
+  // Unless --allow-repeats, candidates overlapping previously exported ranges are dropped
+  // first, so re-running the same video surfaces NEW moments.
   const pool: SourcedRankedClip[] = [];
   for (const analysis of analyses) {
-    const ranked = rank(analysis.candidates, analysis.segments, { top: Infinity, minScore: opts.minScore }, analysis.semantic);
+    let candidates = analysis.candidates;
+    if (!opts.allowRepeats) {
+      const used = await loadUsedRanges(analysis.jobId);
+      candidates = filterUsedCandidates(candidates, used);
+      const excluded = analysis.candidates.length - candidates.length;
+      if (excluded > 0) {
+        logger.info(`[${analysis.jobId}] ${excluded} candidate(s) skipped as previously exported (--allow-repeats to reuse)`);
+      }
+      if (candidates.length === 0 && analysis.candidates.length > 0) {
+        logger.warn(`[${analysis.jobId}] all strong moments already exported in earlier runs — rerun with --allow-repeats to reuse them`);
+      }
+    }
+    const ranked = rank(candidates, analysis.segments, { top: Infinity, minScore: opts.minScore }, analysis.semantic);
     for (const clip of ranked) pool.push({ clip, source: analysis });
   }
 
@@ -304,6 +321,17 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
     } catch (e) {
       sp2.fail(`[${clip.clip_id}] skipped: ${e instanceof Error ? e.message : String(e)}`);
     }
+  }
+
+  // Record exported ranges per source so future runs avoid reusing this material.
+  const bySource = new Map<string, typeof succeeded>();
+  for (const s of succeeded) {
+    (bySource.get(s.source.jobId) ?? bySource.set(s.source.jobId, []).get(s.source.jobId)!).push(s);
+  }
+  for (const [jobId, items] of bySource) {
+    await appendUsedRanges(jobId, items.map(({ clip }) => ({
+      start: clip.start, end: clip.end, clip_id: clip.clip_id, exportedAt: new Date().toISOString(),
+    })));
   }
 
   const ranked = succeeded.map((s) => s.clip);
