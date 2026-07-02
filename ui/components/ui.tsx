@@ -1,5 +1,7 @@
 'use client';
 
+import { useEffect, useState } from 'react';
+
 /** shadcn-style primitives (tailwind-only, no CLI codegen). */
 
 export function Button({
@@ -45,3 +47,43 @@ export function Field({ label, children }: { label: string; children: React.Reac
 }
 
 export const inputCls = 'rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-amber-400';
+
+/**
+ * Number stepper: −/+ buttons plus free typing. While focused you can clear and
+ * retype without the value snapping back; it clamps to [min,max] on blur/Enter.
+ */
+export function Stepper({ value, onChange, min = 1, max = 20 }: {
+  value: number; onChange: (n: number) => void; min?: number; max?: number;
+}) {
+  const [text, setText] = useState(String(value));
+  useEffect(() => { setText(String(value)); }, [value]);
+
+  const clamp = (n: number) => Math.min(max, Math.max(min, n));
+  const commit = () => {
+    const n = parseInt(text, 10);
+    if (Number.isFinite(n)) onChange(clamp(n));
+    setText(String(Number.isFinite(parseInt(text, 10)) ? clamp(parseInt(text, 10)) : value));
+  };
+
+  const btn = 'px-3.5 py-2 text-lg leading-none text-zinc-300 transition-colors hover:bg-zinc-800 hover:text-amber-300 disabled:opacity-30 disabled:hover:bg-transparent';
+  return (
+    <div className="flex w-fit items-stretch overflow-hidden rounded-lg border border-zinc-700 bg-zinc-900 focus-within:border-amber-400">
+      <button type="button" className={btn} aria-label="decrease" disabled={value <= min} onClick={() => onChange(clamp(value - 1))}>−</button>
+      <input
+        value={text}
+        inputMode="numeric"
+        onFocus={(e) => e.target.select()}
+        onChange={(e) => setText(e.target.value.replace(/[^0-9]/g, '').slice(0, 3))}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') commit();
+          if (e.key === 'ArrowUp') { e.preventDefault(); onChange(clamp(value + 1)); }
+          if (e.key === 'ArrowDown') { e.preventDefault(); onChange(clamp(value - 1)); }
+        }}
+        className="w-12 border-x border-zinc-800 bg-transparent py-2 text-center text-sm font-semibold text-zinc-100 outline-none"
+        aria-label="value"
+      />
+      <button type="button" className={btn} aria-label="increase" disabled={value >= max} onClick={() => onChange(clamp(value + 1))}>+</button>
+    </div>
+  );
+}
