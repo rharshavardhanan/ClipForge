@@ -11,11 +11,22 @@ import type { TranscriptSegment, SemanticWindow } from '../types/index.js';
 export type SemanticProvider = 'claude' | 'gemini' | 'none';
 
 const has = (v?: string) => Boolean(v && v.trim());
+const hasClaude = (e: Record<string, string | undefined>) => has(e.ANTHROPIC_API_KEY) || has(e.ANTHROPIC_AUTH_TOKEN);
+const hasGemini = (e: Record<string, string | undefined>) => has(e.GEMINI_API_KEY) || has(e.GEMINI_API_KEYS);
 
-/** PURE: choose the semantic provider from available credentials. Claude wins when present. */
+/**
+ * PURE: choose the semantic provider from available credentials.
+ * `SEMANTIC_PROVIDER` forces a choice: `gemini` (free), `claude`, or `none` (skip LLM,
+ * trigger+audio only). Default `auto` = Claude if an Anthropic key exists, else Gemini.
+ */
 export function pickSemanticProvider(env: Record<string, string | undefined>): SemanticProvider {
-  if (has(env.ANTHROPIC_API_KEY) || has(env.ANTHROPIC_AUTH_TOKEN)) return 'claude';
-  if (has(env.GEMINI_API_KEY) || has(env.GEMINI_API_KEYS)) return 'gemini';
+  const forced = (env.SEMANTIC_PROVIDER ?? '').trim().toLowerCase();
+  if (forced === 'none') return 'none';
+  if (forced === 'gemini') return hasGemini(env) ? 'gemini' : 'none';
+  if (forced === 'claude') return hasClaude(env) ? 'claude' : 'none';
+  // auto
+  if (hasClaude(env)) return 'claude';
+  if (hasGemini(env)) return 'gemini';
   return 'none';
 }
 

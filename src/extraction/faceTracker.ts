@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { run } from '../utils/cmd.js';
 import { mouthOpenness, associateTracks, pickActiveSpeaker } from './activeSpeaker.js';
+import { summarizeFraming, chooseFramingMode, type FramingMode } from './framing.js';
 import type { ActiveSample, CropKeyframe, FaceBox, FaceSample, FrameObs } from '../types/index.js';
 
 const MIN_CROP_H_FRACTION = 0.2; // floor for cropH as a fraction of srcH, avoids degenerate tiny windows
@@ -276,6 +277,35 @@ export async function detectFaceTrack(
 
   const active = pickActiveSpeaker(frames, tracks);
   return buildActiveSpeakerTrack(active, srcW, srcH);
+}
+
+/**
+ * Decide the base framing for a clip and, only when smart-crop is warranted, build the
+ * crop-track. Blur-background is the default (natural, no face cutting); a single stable
+ * close-up dominant face earns 'crop'; two-or-more people stay in blur. This is the
+ * framing decision engine wired to real detections — see src/extraction/framing.ts.
+ */
+export async function planFraming(
+  videoPath: string,
+  srcW: number,
+  srcH: number,
+  fps = 3,
+): Promise<{ mode: FramingMode; track: CropKeyframe[] }> {
+  const frames = await detectFrameObs(videoPath, srcW, srcH, fps);
+  if (frames.length === 0) return { mode: 'blur', track: [] };
+
+  const tracks = associateTracks(frames, srcW * TRACK_ASSOCIATION_DIST_FRACTION);
+  const signal = summarizeFraming(tracks, frames.length, srcW, srcH);
+  const mode = chooseFramingMode(signal);
+
+  if (mode === 'crop' && tracks.length > 0) {
+    // Crop only ever targets ONE person (blur handles multi-face), so track the biggest.
+    const dominant = [...tracks].sort((a, b) => b.samples.length - a.samples.length)[0];
+    const samples: FaceSample[] = dominant.samples.map((s) => ({ time: s.time, box: s.box }));
+    const track = smoothTrack(samples, srcW, srcH);
+    if (track.length > 0) return { mode: 'crop', track };
+  }
+  return { mode: 'blur', track: [] };
 }
 
 /**

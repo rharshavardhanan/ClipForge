@@ -18,8 +18,8 @@ import { rank, defaultMinScore } from '../../clipDetection/ranker.js';
 import { buildCaptionWords } from '../../captions/captionWords.js';
 import { sentimentColor } from '../../captions/sentimentColor.js';
 import { writeSrt } from '../../captions/srtGenerator.js';
-import { extractRaw, extractFullFrame } from '../../extraction/clipExtractor.js';
-import { detectFaceTrack } from '../../extraction/faceTracker.js';
+import { extractFullFrame } from '../../extraction/clipExtractor.js';
+import { planFraming } from '../../extraction/faceTracker.js';
 import { render } from '../../captions/remotionRenderer.js';
 import { scanLibrary, pickTrack, sentimentToMood } from '../../music/library.js';
 import { mixMusic } from '../../music/mixer.js';
@@ -195,30 +195,26 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
     const captionWords = buildCaptionWords(clipWords, clip.start, source.triggers.map((t) => t.phrase));
     await writeSrt(captionWords, join(exportsDir, `${clip.clip_id}.srt`));
 
+    // Both modes render from the full 16:9 extract: 'crop' pans/zooms a face track over it,
+    // 'blur' centers it over a blurred backdrop. Blur is the default (natural, no face cutting).
     const fullPath = join(clipsDir, `${clip.clip_id}_full.mp4`);
     await extractFullFrame(source.videoPath, clip.start, clip.end, fullPath);
-    const track = await detectFaceTrack(fullPath, source.meta.width, source.meta.height);
+    const { mode, track } = await planFraming(fullPath, source.meta.width, source.meta.height);
 
     const hookText = clip.hook_moment ? hookCardText(clip.hook_moment) : undefined;
     const accentColor = sentimentColor(clip.sentiment, opts.accent);
 
-    let producedRawPath: string;
-    if (track.length > 0) {
-      await render({
-        rawClipPath: fullPath, words: captionWords, outPath: finalPath, fps: source.meta.fps,
-        accentColor, style: legacyStyle(opts.style), caption: opts.caption, zooms: opts.zooms,
-        cropTrack: track, srcW: source.meta.width, srcH: source.meta.height,
-        hookText,
-      });
-      producedRawPath = fullPath;
-      logger.info(`[${clip.clip_id}] reframed (${track.length} face keyframes)`);
-    } else {
-      const rawPath = join(clipsDir, `${clip.clip_id}_raw.mp4`);
-      await extractRaw(source.videoPath, clip.start, clip.end, { width: source.meta.width, height: source.meta.height }, rawPath);
-      await render({ rawClipPath: rawPath, words: captionWords, outPath: finalPath, fps: source.meta.fps, accentColor, style: legacyStyle(opts.style), caption: opts.caption, zooms: opts.zooms, hookText });
-      producedRawPath = rawPath;
-      logger.info(`[${clip.clip_id}] center-crop fallback (no faces detected)`);
-    }
+    await render({
+      rawClipPath: fullPath, words: captionWords, outPath: finalPath, fps: source.meta.fps,
+      accentColor, style: legacyStyle(opts.style), caption: opts.caption, zooms: opts.zooms,
+      framing: mode,
+      ...(mode === 'crop' ? { cropTrack: track, srcW: source.meta.width, srcH: source.meta.height } : {}),
+      hookText,
+    });
+    const producedRawPath = fullPath;
+    logger.info(mode === 'crop'
+      ? `[${clip.clip_id}] smart-crop (${track.length} face keyframes)`
+      : `[${clip.clip_id}] blur-background framing`);
 
     // mood-matched background music, ducked under speech (skipped when no track fits)
     const mood = sentimentToMood(clip.sentiment);
