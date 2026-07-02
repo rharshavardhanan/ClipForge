@@ -140,7 +140,7 @@ One-time setup (~5 min, free):
 1. [console.cloud.google.com](https://console.cloud.google.com) → create a project → **APIs & Services → Library** → enable **YouTube Data API v3**.
 2. **APIs & Services → OAuth consent screen** → External → add your Gmail under **Test users**.
 3. **APIs & Services → Credentials → Create credentials → OAuth client ID** → Application type **Desktop app** → copy the client ID + secret into `.env` (`YT_CLIENT_ID`, `YT_CLIENT_SECRET`).
-4. `node dist/cli/index.js auth youtube` — your browser opens, log into the Gmail that owns the channel, click Allow.
+4. `./start.sh auth youtube` — your browser opens, log into the Gmail that owns the channel, click Allow. **Run it again with another account/brand channel to connect more channels** — every upload then asks which channel (GUI dropdown, or `--channel <name>` in the CLI).
 
 Then upload any export — title, description, tags, and thumbnail come from the clip's SEO pack; "not made for kids" is declared; privacy defaults to public:
 
@@ -171,7 +171,7 @@ All outputs land in `workspace/exports/<jobId>/` (batches: `workspace/exports/ba
 | `clip_NNN_raw.mp4` | Raw extract before reframe/captions |
 | `clip_NNN.srt` | Word-level SRT subtitle file |
 | `clip_NNN.json` | Per-clip metadata: layer scores, timing, transcript excerpt, SEO pack |
-| `clip_NNN_thumbnail.png` | Loudest-frame thumbnail with bold bordered title text |
+| `clip_NNN_thumbnail.png` | MrBeast-style thumbnail (Remotion-rendered): loudest frame, face-punched zoom, vignette, huge stroked title |
 | `clip_NNN_title.txt` | Click-optimized title + creator/#shorts tags |
 | `clip_NNN_description.txt` | SEO description: hook line, source credit, hashtag block |
 | `clip_NNN_hashtags.txt` | Full hashtag set (creator + viral + sentiment + niche), one per line |
@@ -182,6 +182,8 @@ All outputs land in `workspace/exports/<jobId>/` (batches: `workspace/exports/ba
 | `ranking_description.txt` | Ranking video SEO description + hashtags |
 
 Clip length is adaptive: sentence-snapped 15–30s by default, extending toward 60s only while the surrounding moments hold peak-level heat (setup/payoff never cut mid-arc).
+
+**Fresh clips on re-runs:** every exported clip's time-range is recorded per source video; running the same video again automatically skips that material and surfaces new moments (`--allow-repeats` to reuse). **Arrow callouts:** on a clip's 1–2 strongest moments an animated arrow points at the speaker's face (only when face tracking found one — arrows never point at nothing; disabled together with `--no-zooms`).
 
 ---
 
