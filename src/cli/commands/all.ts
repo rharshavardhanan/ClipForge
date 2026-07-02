@@ -8,6 +8,7 @@ import { parseVideoId, download } from '../../ingest/downloader.js';
 import { extractMetadata } from '../../ingest/metadataExtractor.js';
 import { getTranscript } from '../../transcript/transcriptManager.js';
 import { detectTriggers } from '../../analysis/transcriptTriggers.js';
+import { commentBoosts } from '../../analysis/commentSignals.js';
 import { analyzeAudio } from '../../analysis/audioEnergy.js';
 import { analyzeSemantic } from '../../analysis/semantic.js';
 import { scoreWindows } from '../../clipDetection/windowScorer.js';
@@ -95,10 +96,11 @@ export async function analyzeVideo(url: string, opts: AllOpts): Promise<VideoAna
   else sp.warn('semantic: unavailable → trigger+audio fallback');
 
   sp = ora('Detecting clips…').start();
-  const windows = scoreWindows(meta.duration, triggers, audio, semantic);
+  const boosts = commentBoosts(meta.topComments ?? [], 30, meta.duration);
+  const windows = scoreWindows(meta.duration, triggers, audio, semantic, boosts);
   const threshold = opts.minScore ?? defaultMinScore(windows);
   const candidates = buildClips(windows, segments, audio, threshold, meta.duration);
-  sp.succeed(`Found ${candidates.length} candidates`);
+  sp.succeed(`Found ${candidates.length} candidates${boosts.length ? ` (${boosts.length} viewer-flagged moments)` : ''}`);
 
   return { jobId, url, videoPath: dl.videoPath, meta, segments, triggers, audio, semantic, candidates };
 }

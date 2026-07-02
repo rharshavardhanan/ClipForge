@@ -47,6 +47,21 @@ describe('scoreWindows', () => {
     expect(w[0].composite).toBeCloseTo(8 * 0.5 + 5 * 0.3 + 10 * 0.2);
   });
 
+  it('folds comment boosts into the composite as an additive bonus on affected windows', () => {
+    const boosts = [{ time: 5, weight: 10 }];
+    const w = scoreWindows(60, [], audio, [], boosts);
+    expect(w[0].commentScore).toBe(10);                      // boost at t=5 inside [0,30)
+    expect(w[0].composite).toBeCloseTo(5 * 0.4 + 10 * 0.15); // base 0.6/0.4 + comment bonus
+    expect(w[1].commentScore).toBe(0);                       // t=5 outside [15,45)
+    expect(w[1].composite).toBeCloseTo(5 * 0.4);             // untouched without boosts
+  });
+
+  it('sums multiple boosts within a window and caps commentScore at 10', () => {
+    const boosts = [{ time: 5, weight: 8 }, { time: 10, weight: 8 }];
+    const w = scoreWindows(60, [], audio, [], boosts);
+    expect(w[0].commentScore).toBe(10); // 16 capped to 10
+  });
+
   it('finds the semantic window with max overlap, not just the first match', () => {
     const semantic: SemanticWindow[] = [
       {

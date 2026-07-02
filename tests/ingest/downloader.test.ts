@@ -23,4 +23,11 @@ describe('downloader pure helpers', () => {
     expect(j).not.toContain('en.*');
     expect(args[0]).toBe('URL');
   });
+
+  it('requests top comments with the download (top-sorted, capped, no replies)', () => {
+    const args = buildYtdlpArgs('URL', '/out');
+    const j = args.join(' ');
+    expect(j).toContain('--write-comments');
+    expect(j).toContain('--extractor-args youtube:comment_sort=top;max_comments=100,all,0');
+  });
 });

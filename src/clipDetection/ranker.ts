@@ -67,7 +67,7 @@ export function rank(
       start: cand.start, end: cand.end, duration,
       composite_score: +cand.composite.toFixed(2),
       semantic_score: sw ? +sw.semantic_score.toFixed(2) : 0, audio_score: +cand.audioScore.toFixed(2), visual_score: 0,
-      trigger_score: +cand.triggerScore.toFixed(2), pacing_score: 0, metadata_score: 0,
+      trigger_score: +cand.triggerScore.toFixed(2), pacing_score: 0, metadata_score: +(cand.commentScore ?? 0).toFixed(2),
       hook_moment: sw ? sw.hook_moment : '', clip_titles: sw ? sw.clip_titles : [],
       is_standalone: sw ? sw.is_standalone : true,
       recommended_duration: sw ? sw.recommended_duration : (duration <= 35 ? 30 : duration <= 50 ? 45 : duration <= 75 ? 60 : 90),

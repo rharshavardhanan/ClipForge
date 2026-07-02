@@ -38,6 +38,17 @@ describe('ranker', () => {
     expect(r[0].audio_score).toBe(7);
   });
 
+  it('surfaces the candidate commentScore as metadata_score (0 when absent)', () => {
+    // [0,30) and [30,62) overlap disjoint segments, so dedup keeps both.
+    const cands: ClipCandidate[] = [
+      { start: 0, end: 30, composite: 8, triggerScore: 6, audioScore: 4, commentScore: 7.5 },
+      { start: 30, end: 62, composite: 5, triggerScore: 3, audioScore: 2 },
+    ];
+    const r = rank(cands, segs, { top: 2, minScore: 0 });
+    expect(r[0].metadata_score).toBe(7.5);
+    expect(r[1].metadata_score).toBe(0);
+  });
+
   it('dedups clips sharing >40% transcript', () => {
     const cands: ClipCandidate[] = [
       { start: 0, end: 30, composite: 8, triggerScore: 0, audioScore: 0 },
