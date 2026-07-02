@@ -63,12 +63,13 @@ export async function renderRanking(
   try {
     await Promise.all(entries.map((e, i) => copyFile(e.clipPath, copies[i])));
     await writeFile(propsPath, JSON.stringify(props));
+    let lastLog = 0;
     await withRetry(
       () =>
         run('npx', buildRankingRenderArgs(propsPath, resolve(outPath)), {
           cwd: REMOTION_DIR,
           onStdout: (l) => {
-            if (l.includes('Rendered')) logger.info(l.trim());
+            if (l.includes('Rendered') && Date.now() - lastLog > 1000) { logger.info(l.trim()); lastLog = Date.now(); }
           },
         }),
       { attempts: 2, label: 'remotion-ranking' },

@@ -215,54 +215,65 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
     ? {}
     : await scanLibrary(opts.musicDir ?? process.env.MUSIC_DIR ?? './music');
 
+  // Render each clip independently — a single clip that errors or hangs (killed by the render
+  // stall-watchdog) is skipped so it can't lose the whole batch. Only clips that fully export
+  // go into the manifest.
+  const succeeded: SourcedRankedClip[] = [];
   for (const { clip, source } of selected) {
     const sp2 = ora(`[${clip.clip_id}] (${source.jobId}) extract + caption…`).start();
     const finalPath = join(exportsDir, `${clip.clip_id}_final.mp4`);
     const clipsDir = join(WS, 'clips', source.jobId);
 
-    const clipWords = source.segments.flatMap((s) => s.words).filter((w) => w.end > clip.start && w.start < clip.end);
-    const captionWords = buildCaptionWords(clipWords, clip.start, source.triggers.map((t) => t.phrase));
-    await writeSrt(captionWords, join(exportsDir, `${clip.clip_id}.srt`));
+    try {
+      const clipWords = source.segments.flatMap((s) => s.words).filter((w) => w.end > clip.start && w.start < clip.end);
+      const captionWords = buildCaptionWords(clipWords, clip.start, source.triggers.map((t) => t.phrase));
+      await writeSrt(captionWords, join(exportsDir, `${clip.clip_id}.srt`));
 
-    // Both modes render from the full 16:9 extract: 'crop' pans/zooms a face track over it,
-    // 'blur' centers it over a blurred backdrop. Blur is the default (natural, no face cutting).
-    const fullPath = join(clipsDir, `${clip.clip_id}_full.mp4`);
-    await extractFullFrame(source.videoPath, clip.start, clip.end, fullPath);
-    const { mode, track } = await planFraming(fullPath, source.meta.width, source.meta.height);
+      // Both modes render from the full 16:9 extract: 'crop' pans/zooms a face track over it,
+      // 'blur' centers it over a blurred backdrop. Blur is the default (natural, no face cutting).
+      const fullPath = join(clipsDir, `${clip.clip_id}_full.mp4`);
+      await extractFullFrame(source.videoPath, clip.start, clip.end, fullPath);
+      const { mode, track } = await planFraming(fullPath, source.meta.width, source.meta.height);
 
-    const hookText = clip.hook_moment ? hookCardText(clip.hook_moment) : undefined;
-    const accentColor = sentimentColor(clip.sentiment, opts.accent);
+      const hookText = clip.hook_moment ? hookCardText(clip.hook_moment) : undefined;
+      const accentColor = sentimentColor(clip.sentiment, opts.accent);
 
-    await render({
-      rawClipPath: fullPath, words: captionWords, outPath: finalPath, fps: source.meta.fps,
-      accentColor, style: legacyStyle(opts.style), caption: opts.caption, zooms: opts.zooms,
-      framing: mode,
-      ...(mode === 'crop' ? { cropTrack: track, srcW: source.meta.width, srcH: source.meta.height } : {}),
-      hookText,
-    });
-    const producedRawPath = fullPath;
-    logger.info(mode === 'crop'
-      ? `[${clip.clip_id}] smart-crop (${track.length} face keyframes)`
-      : `[${clip.clip_id}] blur-background framing`);
+      await render({
+        rawClipPath: fullPath, words: captionWords, outPath: finalPath, fps: source.meta.fps,
+        accentColor, style: legacyStyle(opts.style), caption: opts.caption, zooms: opts.zooms,
+        framing: mode,
+        ...(mode === 'crop' ? { cropTrack: track, srcW: source.meta.width, srcH: source.meta.height } : {}),
+        hookText,
+      });
+      logger.info(mode === 'crop'
+        ? `[${clip.clip_id}] smart-crop (${track.length} face keyframes)`
+        : `[${clip.clip_id}] blur-background framing`);
 
-    // mood-matched background music, ducked under speech (skipped when no track fits)
-    const mood = sentimentToMood(clip.sentiment);
-    const musicTrack = pickTrack(musicLib, mood, `${source.jobId}_${clip.clip_id}`);
-    if (musicTrack) {
-      const tmpPath = finalPath.replace(/\.mp4$/, '.music.mp4');
-      await mixMusic(finalPath, musicTrack, tmpPath, { musicVolume: opts.musicVolume ?? 0.25 });
-      await rename(tmpPath, finalPath);
-      logger.info(`[${clip.clip_id}] music: ${basename(musicTrack)} (${mood})`);
+      // mood-matched background music, ducked under speech (skipped when no track fits)
+      const mood = sentimentToMood(clip.sentiment);
+      const musicTrack = pickTrack(musicLib, mood, `${source.jobId}_${clip.clip_id}`);
+      if (musicTrack) {
+        const tmpPath = finalPath.replace(/\.mp4$/, '.music.mp4');
+        await mixMusic(finalPath, musicTrack, tmpPath, { musicVolume: opts.musicVolume ?? 0.25 });
+        await rename(tmpPath, finalPath);
+        logger.info(`[${clip.clip_id}] music: ${basename(musicTrack)} (${mood})`);
+      }
+
+      // copy raw into exports for completeness
+      await mkdir(exportsDir, { recursive: true });
+      await copyFile(fullPath, join(exportsDir, `${clip.clip_id}_raw.mp4`));
+      succeeded.push({ clip, source });
+      sp2.succeed(`[${clip.clip_id}] done`);
+    } catch (e) {
+      sp2.fail(`[${clip.clip_id}] skipped: ${e instanceof Error ? e.message : String(e)}`);
     }
-
-    // copy raw into exports for completeness
-    await mkdir(exportsDir, { recursive: true });
-    await copyFile(producedRawPath, join(exportsDir, `${clip.clip_id}_raw.mp4`));
-    sp2.succeed(`[${clip.clip_id}] done`);
   }
 
-  const ranked = selected.map((s) => s.clip);
+  const ranked = succeeded.map((s) => s.clip);
   const primary = analyses[0];
+  if (ranked.length < selected.length) {
+    logger.warn(`${selected.length - ranked.length}/${selected.length} clip(s) failed/skipped; manifest has the ${ranked.length} that exported.`);
+  }
   await writeExports(exportsDir, id, primary.url, primary.meta, ranked);
 
   const head = analyses.length === 1 ? ['Rank', 'Score', 'Dur', 'Excerpt'] : ['Rank', 'Score', 'Dur', 'Source', 'Excerpt'];
@@ -276,7 +287,8 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
   logger.info('\n' + table.toString());
 
   // Free the big source download(s) + intermediates once clips are safely exported.
-  if (opts.deleteSource) {
+  // Never delete the source if nothing exported — that would throw away recoverable work.
+  if (opts.deleteSource && ranked.length > 0) {
     let freed = 0;
     for (const p of cleanupTargets(analyses, WS)) {
       freed += await pathSizeBytes(p);
