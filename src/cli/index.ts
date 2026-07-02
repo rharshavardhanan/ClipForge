@@ -7,6 +7,7 @@ import { checkDependencies } from './preflight.js';
 import { runAll, runBatch } from './commands/all.js';
 import { runIngest } from './commands/ingest.js';
 import { runRankingRender } from './commands/rank.js';
+import { runAuthYoutube, runUpload } from './commands/publish.js';
 import { runUi } from './commands/ui.js';
 import { resolveCaptionStyle } from '../captions/presets.js';
 import { isLocalInput } from '../ingest/localFile.js';
@@ -130,6 +131,36 @@ program.command('ui')
   .action(async (o) => {
     try { await runUi(o.port); }
     catch (e) { logger.error((e as Error).message); process.exit(1); }
+  });
+
+program.command('auth')
+  .description('Connect an account for direct publishing (one-time browser consent)')
+  .argument('<service>', 'youtube')
+  .action(async (service) => {
+    try {
+      if (service !== 'youtube') throw new Error(`Unknown service "${service}" — supported: youtube`);
+      await runAuthYoutube();
+    } catch (e) { logger.error((e as Error).message); process.exit(1); }
+  });
+
+program.command('upload')
+  .description('Upload exported clips to YouTube (title/description/tags/thumbnail from the SEO pack)')
+  .argument('<exportsDir>', 'a workspace/exports/<id> directory containing clips_manifest.json')
+  .option('--clips <ids>', 'comma-separated clip ids (default: all)')
+  .option('--privacy <p>', 'public|unlisted|private', 'public')
+  .option('--title <t>', 'override title (single-clip use)')
+  .option('--description <d>', 'override description (single-clip use)')
+  .option('--dry-run', 'print what would be uploaded without uploading')
+  .option('--force', 're-upload clips already marked uploaded')
+  .option('--json', 'print machine-readable results as the last stdout line')
+  .action(async (dir, o) => {
+    try {
+      if (!['public', 'unlisted', 'private'].includes(o.privacy)) throw new Error('--privacy must be public|unlisted|private');
+      await runUpload(dir, {
+        clips: o.clips, privacy: o.privacy, dryRun: o.dryRun, force: o.force, json: o.json,
+        title: o.title, description: o.description,
+      });
+    } catch (e) { logger.error((e as Error).stack ?? String(e)); process.exit(1); }
   });
 
 program.command('rank')
