@@ -19,9 +19,17 @@ export function coldOpenTrim(start: number, silences: SilenceRegion[]): number {
   return covering ? covering.end : start;
 }
 
-// Short-form retention: keep clips punchy. Under ~30s holds viewers far better than 60-90s.
-export const MAX_CLIP_SEC = 30;
+// Adaptive length (v4): most clips stay punchy under the 30s soft cap; a clip may extend
+// toward 60s ONLY while its neighboring windows hold peak-level (>= threshold) heat —
+// "if the clip needs more context, expand; never cut payoff."
 export const MIN_CLIP_SEC = 15;
+export const SOFT_CAP_SEC = 30;
+export const MAX_CLIP_SEC = 60;
+
+function spanAllowed(span: number, composite: number, threshold: number): boolean {
+  if (span <= SOFT_CAP_SEC) return true;
+  return composite >= threshold && span <= MAX_CLIP_SEC;
+}
 
 export function clampDuration(start: number, end: number): { start: number; end: number } {
   let e = end;
@@ -47,19 +55,22 @@ export function buildClips(
     let start = peak.start;
     let end = peak.end;
 
-    // Expand outward over consecutive windows whose composite stays >= floor, capped at MAX_CLIP_SEC.
+    // Expand outward over consecutive windows whose composite stays >= floor. Spans under the
+    // 30s soft cap expand freely; extending toward the 60s max needs peak-level (>= threshold) heat.
     let i = pi;
-    while (i - 1 >= 0 && sorted[i - 1].composite >= floor && end - sorted[i - 1].start <= MAX_CLIP_SEC) {
+    while (i - 1 >= 0 && sorted[i - 1].composite >= floor
+      && spanAllowed(end - sorted[i - 1].start, sorted[i - 1].composite, threshold)) {
       i--;
       start = sorted[i].start;
     }
     let j = pi;
-    while (j + 1 < sorted.length && sorted[j + 1].composite >= floor && sorted[j + 1].end - start <= MAX_CLIP_SEC) {
+    while (j + 1 < sorted.length && sorted[j + 1].composite >= floor
+      && spanAllowed(sorted[j + 1].end - start, sorted[j + 1].composite, threshold)) {
       j++;
       end = sorted[j].end;
     }
 
-    // Snap to sentence boundaries, trim a cold open, clamp to 30-90s, and cap at real duration.
+    // Snap to sentence boundaries, trim a cold open, clamp to 15-60s, and cap at real duration.
     start = coldOpenTrim(snapStart(start, segments), audio.silence_regions);
     end = snapEnd(end, segments);
     ({ start, end } = clampDuration(start, end));

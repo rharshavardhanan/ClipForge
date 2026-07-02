@@ -20,8 +20,8 @@ describe('boundary helpers', () => {
     expect(coldOpenTrim(10, [{ start: 9, end: 11 }])).toBe(11);
     expect(coldOpenTrim(10, [{ start: 30, end: 31 }])).toBe(10);
   });
-  it('clampDuration hard-caps at 30s (short-form retention)', () => {
-    expect(clampDuration(0, 200)).toEqual({ start: 0, end: 30 });
+  it('clampDuration hard-caps at 60s (extended ceiling)', () => {
+    expect(clampDuration(0, 200)).toEqual({ start: 0, end: 60 });
   });
 });
 
@@ -67,13 +67,35 @@ describe('buildClips', () => {
     const segs = Array.from({ length: 18 }, (_, i) => ({ id: i, start: i * 5, end: i * 5 + 4.5, text: `s${i}`, words: [] }));
     const audio = { rms_curve: [], silence_regions: [] };
     const clips = buildClips(windows, segs, audio, 5);
-    // With the 30s short-form cap the arc no longer merges into one long clip; it yields
-    // one or more punchy clips, each expanded from a peak and capped at 30s.
+    // Adaptive length: these neighbors hold peak-level heat (composite >= threshold), so the
+    // arc may extend past the 30s soft cap — but never past the 60s hard cap.
     expect(clips.length).toBeGreaterThanOrEqual(1);
     for (const c of clips) {
       expect(c.end - c.start).toBeGreaterThanOrEqual(15);
-      expect(c.end - c.start).toBeLessThanOrEqual(30);
+      expect(c.end - c.start).toBeLessThanOrEqual(60);
     }
+  });
+
+  it('expansion past 30s requires peak-level neighbors (soft cap)', () => {
+    // floor-level heat only around the peak → capped at the soft 30s
+    const floorWindows = [
+      { start: 0, end: 15, triggerScore: 0, audioScore: 6, composite: 6 },
+      { start: 15, end: 30, triggerScore: 0, audioScore: 9, composite: 9 }, // peak
+      { start: 30, end: 45, triggerScore: 0, audioScore: 6, composite: 6 },
+    ];
+    const clips = buildClips(floorWindows, [], { rms_curve: [], silence_regions: [] }, 8);
+    expect(clips.length).toBeGreaterThanOrEqual(1);
+    for (const c of clips) expect(c.end - c.start).toBeLessThanOrEqual(30);
+  });
+
+  it('sustained peak-level heat extends past 30s but never past 60s', () => {
+    const hotWindows = Array.from({ length: 5 }, (_, k) => (
+      { start: k * 15, end: (k + 1) * 15, triggerScore: 9, audioScore: 9, composite: 9 }
+    ));
+    const clips = buildClips(hotWindows, [], { rms_curve: [], silence_regions: [] }, 8);
+    expect(clips.length).toBeGreaterThan(0);
+    expect(clips[0].end - clips[0].start).toBeGreaterThan(30);
+    for (const c of clips) expect(c.end - c.start).toBeLessThanOrEqual(60);
   });
 
   it('carries the peak window commentScore onto the candidate', () => {
