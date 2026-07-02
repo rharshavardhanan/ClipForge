@@ -43,7 +43,7 @@ export function RankTab({ jobs, accent, onFinished }: { jobs: ExportJob[]; accen
             {job.hasRanking && <Badge tone="green">rendered</Badge>}
             <div className="ml-auto">
               <Button
-                variant={job.hasRanking ? 'outline' : 'default'}
+                variant={job.hasRanking ? 'outline' : 'primary'}
                 disabled={busyJob !== null}
                 onClick={() => render(job.id)}
               >

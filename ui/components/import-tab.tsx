@@ -1,7 +1,8 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import { Button, Card, Field, Stepper, inputCls } from './ui';
+import { Button, Card, Field, SectionHead, Stepper, inputCls } from './ui';
+import { Icon } from './icons';
 import { RunLog } from './run-log';
 import type { StyleConfig } from './style-tab';
 
@@ -58,56 +59,73 @@ export function ImportTab({ style, onFinished }: { style: StyleConfig; onFinishe
     }
   };
 
+  const canRun = inputs.length > 0 && !starting && !(runId !== null && !error);
+
   return (
-    <Card>
-      <h2 className="mb-1 text-lg font-bold">Import &amp; run</h2>
-      <p className="mb-4 text-sm text-zinc-500">
-        One input per line: YouTube URLs and/or local video file paths. Multiple lines run as a cross-ranked batch.
-      </p>
-
-      <textarea
-        value={inputsText}
-        onChange={(e) => setInputsText(e.target.value)}
-        onDragOver={(e) => e.preventDefault()}
-        onDrop={(e) => {
-          e.preventDefault();
-          if (e.dataTransfer.files.length) uploadFiles(e.dataTransfer.files);
-        }}
-        placeholder={'https://www.youtube.com/watch?v=…\n/path/to/local/video.mp4   (or drag a video file here)'}
-        rows={4}
-        className={`${inputCls} w-full font-mono`}
-      />
-      <div className="mt-2 flex items-center gap-3">
-        <input
-          ref={fileRef} type="file" accept=".mp4,.mov,.mkv,.webm,.m4v" multiple hidden
-          onChange={(e) => { if (e.target.files?.length) uploadFiles(e.target.files); e.target.value = ''; }}
+    <div className="flex flex-col gap-5">
+      <Card accent>
+        <SectionHead
+          title="Import & run"
+          subtitle="One input per line — YouTube URLs and/or local files. Two or more lines run as a cross-ranked batch."
         />
-        <Button variant="outline" className="!px-3 !py-1.5 text-xs" onClick={() => fileRef.current?.click()} disabled={Boolean(uploading)}>
-          + Add local video
-        </Button>
-        {uploading && <span className="text-xs text-amber-300">Uploading {uploading}…</span>}
-      </div>
 
-      <div className="mt-4 flex flex-wrap items-end gap-4">
-        <Field label="Max clips">
-          <Stepper value={top} onChange={setTop} min={1} max={20} />
-        </Field>
-        <label className={`flex items-center gap-2 text-sm ${inputs.length > 1 ? 'text-zinc-300' : 'text-zinc-600'}`}>
-          <input type="checkbox" checked={ranking} disabled={inputs.length < 2} onChange={(e) => setRanking(e.target.checked)} className="accent-amber-400" />
-          Render #N→#1 ranking video (batch only)
-        </label>
-        <div className="ml-auto flex items-center gap-3">
-          <span className="text-xs text-zinc-500">
-            preset <span className="text-amber-300">{style.preset}</span> · music {style.music ? 'auto' : 'off'} · zooms {style.zooms ? 'on' : 'off'}
-          </span>
-          <Button onClick={start} disabled={inputs.length === 0 || starting || (runId !== null && !error)}>
-            {starting ? 'Starting…' : 'Run pipeline'}
-          </Button>
+        <div
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => { e.preventDefault(); if (e.dataTransfer.files.length) uploadFiles(e.dataTransfer.files); }}
+          className="relative"
+        >
+          <textarea
+            value={inputsText}
+            onChange={(e) => setInputsText(e.target.value)}
+            placeholder={'https://www.youtube.com/watch?v=…\n/path/to/local/video.mp4\n\n…or drag a video file anywhere in this box'}
+            rows={5}
+            className={`${inputCls} w-full resize-y font-mono leading-relaxed`}
+          />
+          {inputs.length > 0 && (
+            <span className="pointer-events-none absolute right-3 top-3 rounded-full bg-ink-600 px-2 py-0.5 text-[11px] font-semibold text-zinc-400">
+              {inputs.length} input{inputs.length > 1 ? 's' : ''}
+            </span>
+          )}
         </div>
-      </div>
 
-      {error && <p className="mt-3 text-sm text-red-400">{error}</p>}
-      {runId && <RunLog runId={runId} onDone={() => { setRunId(null); onFinished(); }} />}
-    </Card>
+        <div className="mt-3 flex items-center gap-3">
+          <input
+            ref={fileRef} type="file" accept=".mp4,.mov,.mkv,.webm,.m4v" multiple hidden
+            onChange={(e) => { if (e.target.files?.length) uploadFiles(e.target.files); e.target.value = ''; }}
+          />
+          <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()} disabled={Boolean(uploading)}>
+            <Icon name="upload" className="h-4 w-4" /> Add local video
+          </Button>
+          {uploading && <span className="animate-pulse text-xs text-gold">Uploading {uploading}…</span>}
+        </div>
+      </Card>
+
+      <Card>
+        <div className="flex flex-wrap items-end gap-6">
+          <Field label="Max clips" hint="Best moments to export">
+            <Stepper value={top} onChange={setTop} min={1} max={20} />
+          </Field>
+
+          <label className={`flex cursor-pointer items-center gap-2.5 rounded-xl border border-line px-3.5 py-2.5 text-sm transition-colors ${inputs.length > 1 ? 'text-zinc-200 hover:border-zinc-600' : 'cursor-not-allowed text-zinc-600'}`}>
+            <input type="checkbox" checked={ranking} disabled={inputs.length < 2} onChange={(e) => setRanking(e.target.checked)} className="h-4 w-4 accent-gold" />
+            Render #N → #1 ranking video
+          </label>
+
+          <div className="ml-auto flex items-center gap-4">
+            <div className="text-right text-xs text-zinc-500">
+              <div>preset <span className="font-semibold text-gold">{style.preset}</span></div>
+              <div>music {style.music ? 'auto' : 'off'} · zooms {style.zooms ? 'on' : 'off'}</div>
+            </div>
+            <Button onClick={start} disabled={!canRun}>
+              <Icon name="play" className="h-4 w-4" />
+              {starting ? 'Starting…' : 'Run pipeline'}
+            </Button>
+          </div>
+        </div>
+
+        {error && <p className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 px-3.5 py-2.5 text-sm text-red-300">{error}</p>}
+        {runId && <RunLog runId={runId} onDone={() => { setRunId(null); onFinished(); }} />}
+      </Card>
+    </div>
   );
 }
