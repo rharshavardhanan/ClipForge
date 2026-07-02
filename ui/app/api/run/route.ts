@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
   if (body.music === false) args.push('--no-music');
   if (body.zooms === false) args.push('--no-zooms');
   if (body.deleteSource === true) args.push('--delete-source');
-  if (body.ranking === true && inputs.length > 1) args.push('--ranking');
+  if (body.ranking === true) args.push('--ranking');
 
   const run = startRun(args);
   return NextResponse.json({ id: run.id, args: run.args });

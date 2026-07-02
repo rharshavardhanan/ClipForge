@@ -83,12 +83,15 @@ program.name('clipforge').description('Local-first viral short-form clip engine'
 addRenderOptions(
   program.command('all').argument('<input>', 'YouTube URL or local video file')
     .option('--top <n>', 'max clips to export', (v) => parseInt(v, 10), 3)
-    .option('--min-score <x>', 'absolute composite floor', (v) => parseFloat(v)),
+    .option('--min-score <x>', 'absolute composite floor', (v) => parseFloat(v))
+    .option('--ranking', 'also render a #N→#1 countdown ranking video from the exported clips'),
 )
   .action(async (input, o) => {
     await preflightOrExit();
-    try { await runAll(input, renderOpts(o)); }
-    catch (e) { logger.error((e as Error).stack ?? String(e)); process.exit(1); }
+    try {
+      const exportsDir = await runAll(input, renderOpts(o));
+      if (o.ranking) await runRankingRender(exportsDir, { accent: o.accent, cardSec: 1.5 });
+    } catch (e) { logger.error((e as Error).stack ?? String(e)); process.exit(1); }
   });
 
 addRenderOptions(
@@ -96,13 +99,16 @@ addRenderOptions(
     .description('Process a LOCAL video file (no download; transcript via whisper)')
     .argument('<file>', 'path to a local .mp4/.mkv/.mov/.webm/.m4v')
     .option('--top <n>', 'max clips to export', (v) => parseInt(v, 10), 3)
-    .option('--min-score <x>', 'absolute composite floor', (v) => parseFloat(v)),
+    .option('--min-score <x>', 'absolute composite floor', (v) => parseFloat(v))
+    .option('--ranking', 'also render a #N→#1 countdown ranking video from the exported clips'),
 )
   .action(async (file, o) => {
     if (!isLocalInput(file)) { logger.error(`Not an existing local video file: ${file}`); process.exit(1); }
     await preflightOrExit();
-    try { await runAll(file, renderOpts(o)); }
-    catch (e) { logger.error((e as Error).stack ?? String(e)); process.exit(1); }
+    try {
+      const exportsDir = await runAll(file, renderOpts(o));
+      if (o.ranking) await runRankingRender(exportsDir, { accent: o.accent, cardSec: 1.5 });
+    } catch (e) { logger.error((e as Error).stack ?? String(e)); process.exit(1); }
   });
 
 program.command('ingest').argument('<url>', 'YouTube URL')
