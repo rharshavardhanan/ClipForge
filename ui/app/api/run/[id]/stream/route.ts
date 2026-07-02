@@ -8,21 +8,38 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   const run = getRun(params.id);
   if (!run) return new Response('unknown run', { status: 404 });
 
+  // Hoisted so both start() and cancel() share them: the client can disconnect
+  // (tab closed) before the run ends, which fires cancel() — the interval must stop
+  // or the next enqueue throws ERR_INVALID_STATE on a closed controller.
+  let closed = false;
+  let tick: ReturnType<typeof setInterval> | undefined;
+
   const stream = new ReadableStream({
     start(controller) {
       const enc = new TextEncoder();
       let sent = 0;
-      const tick = setInterval(() => {
-        while (sent < run.logs.length) {
-          controller.enqueue(enc.encode(`data: ${JSON.stringify(run.logs[sent])}\n\n`));
-          sent++;
-        }
-        if (run.done) {
-          controller.enqueue(enc.encode(`event: done\ndata: ${run.code}\n\n`));
+      tick = setInterval(() => {
+        if (closed) return;
+        try {
+          while (sent < run.logs.length) {
+            controller.enqueue(enc.encode(`data: ${JSON.stringify(run.logs[sent])}\n\n`));
+            sent++;
+          }
+          if (run.done) {
+            controller.enqueue(enc.encode(`event: done\ndata: ${run.code}\n\n`));
+            closed = true;
+            clearInterval(tick);
+            controller.close();
+          }
+        } catch {
+          closed = true;
           clearInterval(tick);
-          controller.close();
         }
       }, 500);
+    },
+    cancel() {
+      closed = true;
+      clearInterval(tick);
     },
   });
 
