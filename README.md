@@ -1,6 +1,6 @@
 # ClipForge
 
-ClipForge is a local-first AI short-form video **editor engine** — not a clip extractor. Feed it YouTube URLs or local video files and it finds the strongest moments (semantic scoring + audio energy + linguistic triggers + viewer-flagged comment timestamps), reframes them to 9:16 with face-tracked pan/zoom, burns preset-styled karaoke captions, lays a mood-matched ducked music bed underneath, adds sparing punch zooms, and exports ready-to-post finals. Point it at several videos and it cross-ranks the best moments into one leaderboard — and can stitch them into a **#N→#1 countdown ranking video** with rank cards and badges. All processing runs on your machine; only the optional Gemini semantic-scoring calls leave it.
+ClipForge is a local-first AI short-form video **editor engine** — not a clip extractor. Feed it YouTube URLs or local video files and it finds the strongest moments (semantic scoring + audio energy + linguistic triggers + viewer-flagged comment timestamps), reframes them to 9:16 with face-tracked pan/zoom, burns preset-styled karaoke captions, lays a mood-matched ducked music bed underneath, adds sparing punch zooms, and exports ready-to-post finals. Point it at several videos and it cross-ranks the best moments into one leaderboard — and can stitch them into a **#N→#1 countdown ranking video** with rank cards and badges. All processing runs on your machine; only the optional semantic-scoring calls (Claude, or Gemini as fallback) leave it.
 
 ---
 
@@ -135,10 +135,17 @@ All outputs land in `workspace/exports/<jobId>/` (batches: `workspace/exports/ba
 
 ## Configuration
 
-Create a `.env` in the project root (everything optional — without Gemini keys the scorer falls back to audio+trigger analysis):
+Create a `.env` in the project root. Semantic scoring uses **Claude as the primary (highest-accuracy) brain** and **Gemini Flash as the redundant fallback**. Everything is optional — with no LLM key the scorer falls back to audio + linguistic-trigger analysis.
 
 ```env
-# Gemini semantic scoring — one key, or several to multiply free-tier quota
+# Claude — primary semantic scoring (title generation, viral scoring, hooks).
+# Get a key at https://console.anthropic.com/settings/keys
+ANTHROPIC_API_KEY=sk-ant-...
+ANTHROPIC_MODEL=claude-sonnet-5     # default; any Claude model id
+ANTHROPIC_EFFORT=medium             # low | medium | high | xhigh | max
+
+# Gemini — redundant fallback (used when no Anthropic key, or Claude returns nothing).
+# One key, or several to multiply free-tier quota.
 GEMINI_API_KEY=
 GEMINI_API_KEYS=key1,key2,key3
 GEMINI_MODEL=gemini-2.5-flash
@@ -150,6 +157,8 @@ MUSIC_DIR=./music
 # Log verbosity: error | warn | info | debug
 LOG_LEVEL=info
 ```
+
+**Provider selection:** if `ANTHROPIC_API_KEY` (or an `ant auth login` token) is present, ClipForge scores with Claude and prints `semantic: N windows (claude)`. If only Gemini keys exist, it uses Gemini. Semantic results are cached per provider (`layer_semantic_claude.json` / `layer_semantic_gemini.json`) so switching keys re-scores rather than reusing the other provider's output.
 
 ---
 
@@ -166,7 +175,7 @@ Transcript ─ json3 word timing → whisper-cpp fallback
     │
     ▼
 Analysis ── audio energy (RMS/silence) × linguistic triggers
-    │        × Gemini semantic windows × comment-timestamp boosts
+    │        × semantic windows (Claude → Gemini fallback) × comment boosts
     ▼
 Clip detection ─ sliding-window composite → boundary snap → merge/rank
     │             (batch: pool candidates, rank globally across videos)

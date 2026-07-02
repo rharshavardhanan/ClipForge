@@ -19,16 +19,16 @@ export interface SemanticChunkResult {
   reason: string;
 }
 
+export const BATCH_SIZE = 15;
 const MAX_CHARS = 3000;
-const BATCH_SIZE = 15;
 const BATCH_CONCURRENCY = 2;
 const INTER_BATCH_DELAY_MS = 300;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-const SYSTEM_PROMPT = `You are a viral content analyst. You study short-form video clips (TikTok, Reels, Shorts) and know exactly what makes a moment scroll-stopping. Given a list of transcript windows, score each one for viral/emotional potential and extract a clip-ready hook. Return ONLY valid JSON, no markdown, no commentary.`;
+export const SYSTEM_PROMPT = `You are a viral content analyst. You study short-form video clips (TikTok, Reels, Shorts) and know exactly what makes a moment scroll-stopping. Given a list of transcript windows, score each one for viral/emotional potential and extract a clip-ready hook. Return ONLY valid JSON, no markdown, no commentary.`;
 
-function buildBatchPrompt(chunks: TranscriptChunk[]): string {
+export function buildBatchPrompt(chunks: TranscriptChunk[]): string {
   const windowsBlock = chunks
     .map(
       (chunk, i) => `WINDOW ${i + 1} (${chunk.start.toFixed(1)}s - ${chunk.end.toFixed(1)}s):
@@ -160,7 +160,7 @@ async function mapWithConcurrency<T, R>(
 }
 
 /** PURE: split chunks into fixed-size batches. */
-function batchChunks(chunks: TranscriptChunk[], batchSize: number): TranscriptChunk[][] {
+export function batchChunks(chunks: TranscriptChunk[], batchSize: number): TranscriptChunk[][] {
   const batches: TranscriptChunk[][] = [];
   for (let i = 0; i < chunks.length; i += batchSize) {
     batches.push(chunks.slice(i, i + batchSize));
@@ -192,7 +192,7 @@ export function parseRetryDelayMs(e: unknown): number | null {
   return Math.round(seconds * 1000);
 }
 
-function toWindow(chunk: TranscriptChunk, result: SemanticChunkResult): SemanticWindow {
+export function toWindow(chunk: TranscriptChunk, result: SemanticChunkResult): SemanticWindow {
   return {
     start: chunk.start,
     end: chunk.end,

@@ -11,7 +11,7 @@ import { getTranscript } from '../../transcript/transcriptManager.js';
 import { detectTriggers } from '../../analysis/transcriptTriggers.js';
 import { commentBoosts } from '../../analysis/commentSignals.js';
 import { analyzeAudio } from '../../analysis/audioEnergy.js';
-import { analyzeSemantic } from '../../analysis/semantic.js';
+import { analyzeSemanticAuto, pickSemanticProvider } from '../../analysis/semanticEngine.js';
 import { scoreWindows } from '../../clipDetection/windowScorer.js';
 import { buildClips } from '../../clipDetection/merger.js';
 import { rank, defaultMinScore } from '../../clipDetection/ranker.js';
@@ -107,13 +107,16 @@ export async function analyzeVideo(url: string, opts: AllOpts): Promise<VideoAna
   const audio = await analyzeAudio(dl.videoPath);
   sp.succeed(`Analysis done — ${triggers.length} trigger hits`);
 
-  sp = ora('Analyzing semantics (Gemini)…').start();
-  const semantic = await analyzeSemantic(segments, {
-    apiKey: process.env.GEMINI_API_KEY,
-    model: process.env.GEMINI_MODEL,
-    outPath: join(dirs.analysis, 'layer_semantic.json'),
+  // Claude is the primary semantic brain (accuracy); Gemini Flash is the redundant fallback.
+  // Cache per provider so switching keys doesn't reuse the other provider's scores.
+  const chosen = pickSemanticProvider(process.env);
+  sp = ora(`Analyzing semantics (${chosen})…`).start();
+  const { windows: semantic, provider } = await analyzeSemanticAuto(segments, {
+    geminiModel: process.env.GEMINI_MODEL,
+    claudeModel: process.env.ANTHROPIC_MODEL,
+    outPath: join(dirs.analysis, `layer_semantic_${chosen}.json`),
   });
-  if (semantic.length > 0) sp.succeed(`semantic: ${semantic.length} windows`);
+  if (semantic.length > 0) sp.succeed(`semantic: ${semantic.length} windows (${provider})`);
   else sp.warn('semantic: unavailable → trigger+audio fallback');
 
   sp = ora('Detecting clips…').start();
