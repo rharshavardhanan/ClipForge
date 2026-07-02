@@ -8,6 +8,7 @@ export const dynamic = 'force-dynamic';
 const TYPES: Record<string, string> = {
   '.mp4': 'video/mp4',
   '.srt': 'text/plain; charset=utf-8',
+  '.txt': 'text/plain; charset=utf-8',
   '.json': 'application/json',
   '.png': 'image/png',
 };
