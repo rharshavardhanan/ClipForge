@@ -28,6 +28,7 @@ export interface ExportJob {
   processedAt: string;
   clipCount: number;
   hasRanking: boolean;
+  sizeBytes: number;
   clips: ClipInfo[];
 }
 
@@ -47,6 +48,10 @@ export async function listExports(): Promise<ExportJob[]> {
       if (!(await stat(dir)).isDirectory()) continue;
       const manifest = JSON.parse(await readFile(join(dir, 'clips_manifest.json'), 'utf8'));
       const hasRanking = await stat(join(dir, 'ranking_final.mp4')).then(() => true).catch(() => false);
+      let sizeBytes = 0;
+      for (const f of await readdir(dir)) {
+        sizeBytes += await stat(join(dir, f)).then((s) => (s.isFile() ? s.size : 0)).catch(() => 0);
+      }
       jobs.push({
         id,
         title: manifest.title ?? id,
@@ -54,6 +59,7 @@ export async function listExports(): Promise<ExportJob[]> {
         processedAt: manifest.processed_at ?? '',
         clipCount: manifest.clips_generated ?? manifest.clips?.length ?? 0,
         hasRanking,
+        sizeBytes,
         clips: (manifest.clips ?? []).map((c: any) => ({
           clipId: c.clip_id,
           rank: c.rank,

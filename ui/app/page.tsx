@@ -48,11 +48,13 @@ export default function Home() {
           ))}
         </Tabs.List>
 
-        <Tabs.Content value="Import"><ImportTab style={style} onFinished={refreshJobs} /></Tabs.Content>
-        <Tabs.Content value="Clips"><ClipsTab jobs={jobs} onRefresh={refreshJobs} /></Tabs.Content>
-        <Tabs.Content value="Style"><StyleTab style={style} onChange={setStyle} /></Tabs.Content>
-        <Tabs.Content value="Rank"><RankTab jobs={jobs} accent={style.accent} onFinished={refreshJobs} /></Tabs.Content>
-        <Tabs.Content value="Export"><ExportTab jobs={jobs} /></Tabs.Content>
+        {/* forceMount keeps tabs mounted when inactive — otherwise Radix unmounts them and
+            you lose in-progress state (pasted URLs, live run logs) on every tab switch. */}
+        <Tabs.Content value="Import" forceMount className="data-[state=inactive]:hidden"><ImportTab style={style} onFinished={refreshJobs} /></Tabs.Content>
+        <Tabs.Content value="Clips" forceMount className="data-[state=inactive]:hidden"><ClipsTab jobs={jobs} onRefresh={refreshJobs} /></Tabs.Content>
+        <Tabs.Content value="Style" forceMount className="data-[state=inactive]:hidden"><StyleTab style={style} onChange={setStyle} /></Tabs.Content>
+        <Tabs.Content value="Rank" forceMount className="data-[state=inactive]:hidden"><RankTab jobs={jobs} accent={style.accent} onFinished={refreshJobs} /></Tabs.Content>
+        <Tabs.Content value="Export" forceMount className="data-[state=inactive]:hidden"><ExportTab jobs={jobs} onChanged={refreshJobs} /></Tabs.Content>
       </Tabs.Root>
     </main>
   );

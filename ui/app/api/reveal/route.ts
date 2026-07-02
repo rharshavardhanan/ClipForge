@@ -1,17 +1,15 @@
-import { rm, stat } from 'node:fs/promises';
+import { spawn } from 'node:child_process';
+import { stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { NextRequest, NextResponse } from 'next/server';
-import { listExports, WORKSPACE_DIR } from '@/lib/workspace';
+import { WORKSPACE_DIR } from '@/lib/workspace';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
-  return NextResponse.json(await listExports());
-}
-
-/** Delete one export directory: DELETE /api/jobs?job=<id>. */
-export async function DELETE(req: NextRequest) {
-  const raw = req.nextUrl.searchParams.get('job') ?? '';
+/** Open an export folder in Finder (macOS) / file manager (Linux). Body: { job }. */
+export async function POST(req: NextRequest) {
+  const body = await req.json().catch(() => null);
+  const raw = typeof body?.job === 'string' ? body.job : '';
   const job = raw.replace(/[^A-Za-z0-9_-]/g, '');
   if (!job || job !== raw) return NextResponse.json({ error: 'invalid job id' }, { status: 400 });
 
@@ -19,6 +17,7 @@ export async function DELETE(req: NextRequest) {
   const exists = await stat(dir).then((s) => s.isDirectory()).catch(() => false);
   if (!exists) return NextResponse.json({ error: 'not found' }, { status: 404 });
 
-  await rm(dir, { recursive: true, force: true });
+  const opener = process.platform === 'darwin' ? 'open' : 'xdg-open';
+  spawn(opener, [dir], { detached: true, stdio: 'ignore' }).unref();
   return NextResponse.json({ ok: true });
 }

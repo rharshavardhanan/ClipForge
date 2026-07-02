@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Button, Card, Field, Stepper, inputCls } from './ui';
 import { RunLog } from './run-log';
 import type { StyleConfig } from './style-tab';
@@ -12,8 +12,26 @@ export function ImportTab({ style, onFinished }: { style: StyleConfig; onFinishe
   const [runId, setRunId] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState('');
+  const [uploading, setUploading] = useState('');
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const inputs = inputsText.split('\n').map((l) => l.trim()).filter(Boolean);
+
+  const uploadFiles = async (files: FileList | File[]) => {
+    setError('');
+    for (const f of Array.from(files)) {
+      setUploading(f.name);
+      try {
+        const res = await fetch(`/api/upload?name=${encodeURIComponent(f.name)}`, { method: 'POST', body: f });
+        const body = await res.json();
+        if (!res.ok) throw new Error(body.error ?? 'upload failed');
+        setInputsText((prev) => (prev.trim() ? `${prev.trimEnd()}\n${body.path}` : body.path));
+      } catch (e) {
+        setError(`${f.name}: ${(e as Error).message}`);
+      }
+    }
+    setUploading('');
+  };
 
   const start = async () => {
     setError('');
@@ -25,6 +43,8 @@ export function ImportTab({ style, onFinished }: { style: StyleConfig; onFinishe
         body: JSON.stringify({
           inputs, top,
           style: style.preset, accent: style.accent, music: style.music, zooms: style.zooms,
+          font: style.font, fontSize: style.fontSize, position: style.position,
+          stroke: style.stroke, captionColor: style.captionColor,
           ranking,
         }),
       });
@@ -48,10 +68,25 @@ export function ImportTab({ style, onFinished }: { style: StyleConfig; onFinishe
       <textarea
         value={inputsText}
         onChange={(e) => setInputsText(e.target.value)}
-        placeholder={'https://www.youtube.com/watch?v=…\n/path/to/local/video.mp4'}
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => {
+          e.preventDefault();
+          if (e.dataTransfer.files.length) uploadFiles(e.dataTransfer.files);
+        }}
+        placeholder={'https://www.youtube.com/watch?v=…\n/path/to/local/video.mp4   (or drag a video file here)'}
         rows={4}
         className={`${inputCls} w-full font-mono`}
       />
+      <div className="mt-2 flex items-center gap-3">
+        <input
+          ref={fileRef} type="file" accept=".mp4,.mov,.mkv,.webm,.m4v" multiple hidden
+          onChange={(e) => { if (e.target.files?.length) uploadFiles(e.target.files); e.target.value = ''; }}
+        />
+        <Button variant="outline" className="!px-3 !py-1.5 text-xs" onClick={() => fileRef.current?.click()} disabled={Boolean(uploading)}>
+          + Add local video
+        </Button>
+        {uploading && <span className="text-xs text-amber-300">Uploading {uploading}…</span>}
+      </div>
 
       <div className="mt-4 flex flex-wrap items-end gap-4">
         <Field label="Max clips">
