@@ -62,6 +62,10 @@ export interface ClipCompositionProps {
   cropTrack?: CropKeyframe[]; srcW?: number; srcH?: number;
 }
 
+// Ranking video render mode (RV1/RV2) — mirrors remotion/src/rankingLogic.ts
+export interface RankingItem { videoPath: string; rank: number; durationInFrames: number; title?: string; }
+export interface RankingProps { items: RankingItem[]; fps: number; cardFrames: number; accentColor: string; }
+
 // Multi-video cross-ranking (MV1)
 /** Result of analyzing a single video, up to (but not including) ranking/export. */
 export interface VideoAnalysis {
