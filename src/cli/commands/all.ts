@@ -23,6 +23,7 @@ import { render } from '../../captions/remotionRenderer.js';
 import { writeExports } from '../../export/exporter.js';
 import { logger } from '../../utils/logger.js';
 import type { RankedClip, TranscriptSegment, VideoAnalysis } from '../../types/index.js';
+import type { CaptionStyle } from '../../captions/presets.js';
 
 const WS = process.env.WORKSPACE_DIR ?? './workspace';
 
@@ -47,9 +48,17 @@ export function batchId(urls: string[]): string {
 export interface AllOpts {
   top: number;
   minScore?: number;
-  style: 'minimal' | 'card' | 'bold';
+  /** Caption preset name (mrbeast|hormozi|gadzhi|gaming|podcast|cinematic|minimal|card|bold). */
+  style: string;
   accent: string;
   perVideoCap?: number;
+  /** Resolved caption style config; absent → renderer's legacy bold look. */
+  caption?: CaptionStyle;
+}
+
+/** PURE: coerce a preset name onto the legacy Remotion style prop (unknown → bold). */
+export function legacyStyle(preset: string): 'minimal' | 'card' | 'bold' {
+  return preset === 'minimal' || preset === 'card' ? preset : 'bold';
 }
 
 /** A RankedClip tagged with the VideoAnalysis it came from. */
@@ -178,7 +187,7 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
     if (track.length > 0) {
       await render({
         rawClipPath: fullPath, words: captionWords, outPath: finalPath, fps: source.meta.fps,
-        accentColor, style: opts.style,
+        accentColor, style: legacyStyle(opts.style), caption: opts.caption,
         cropTrack: track, srcW: source.meta.width, srcH: source.meta.height,
         hookText,
       });
@@ -187,7 +196,7 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
     } else {
       const rawPath = join(clipsDir, `${clip.clip_id}_raw.mp4`);
       await extractRaw(source.videoPath, clip.start, clip.end, { width: source.meta.width, height: source.meta.height }, rawPath);
-      await render({ rawClipPath: rawPath, words: captionWords, outPath: finalPath, fps: source.meta.fps, accentColor, style: opts.style, hookText });
+      await render({ rawClipPath: rawPath, words: captionWords, outPath: finalPath, fps: source.meta.fps, accentColor, style: legacyStyle(opts.style), caption: opts.caption, hookText });
       producedRawPath = rawPath;
       logger.info(`[${clip.clip_id}] center-crop fallback (no faces detected)`);
     }
