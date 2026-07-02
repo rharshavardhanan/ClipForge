@@ -18,8 +18,8 @@ export interface TriggerHit { time: number; weight: number; phrase: string; tier
 export interface RmsPoint { time: number; rms: number; }       // rms normalized 0–10
 export interface SilenceRegion { start: number; end: number; }
 export interface AudioEnergyLayer { rms_curve: RmsPoint[]; silence_regions: SilenceRegion[]; }
-export interface WindowScore { start: number; end: number; triggerScore: number; audioScore: number; semanticScore: number; composite: number; }
-export interface ClipCandidate { start: number; end: number; composite: number; triggerScore: number; audioScore: number; }
+export interface WindowScore { start: number; end: number; triggerScore: number; audioScore: number; semanticScore: number; commentScore?: number; composite: number; }
+export interface ClipCandidate { start: number; end: number; composite: number; triggerScore: number; audioScore: number; commentScore?: number; }
 export interface RankedClip {
   rank: number; clip_id: string; start: number; end: number; duration: number;
   composite_score: number;

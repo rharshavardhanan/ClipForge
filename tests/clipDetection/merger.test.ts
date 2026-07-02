@@ -73,6 +73,14 @@ describe('buildClips', () => {
     expect(clips[0].end - clips[0].start).toBeLessThanOrEqual(90);
   });
 
+  it('carries the peak window commentScore onto the candidate', () => {
+    const windows = [{ start: 0, end: 30, triggerScore: 9, audioScore: 9, composite: 9, commentScore: 7 }];
+    const segs = [{ id: 0, start: 0, end: 30, text: 'a', words: [] }];
+    const audio = { rms_curve: [], silence_regions: [] };
+    const clips = buildClips(windows, segs, audio, 5, 60);
+    expect(clips[0].commentScore).toBe(7);
+  });
+
   it('buildClips caps end at the provided video duration', () => {
     const windows = [{ start: 0, end: 30, triggerScore: 9, audioScore: 9, composite: 9 }];
     const segs = [{ id: 0, start: 0, end: 25, text: 'a', words: [] }];

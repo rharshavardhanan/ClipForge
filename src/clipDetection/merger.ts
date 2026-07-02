@@ -69,7 +69,7 @@ export function buildClips(
     });
     if (overlaps) continue;
 
-    clips.push({ start, end, composite: peak.composite, triggerScore: peak.triggerScore, audioScore: peak.audioScore });
+    clips.push({ start, end, composite: peak.composite, triggerScore: peak.triggerScore, audioScore: peak.audioScore, commentScore: peak.commentScore });
   }
   return clips;
 }

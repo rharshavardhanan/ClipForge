@@ -18,6 +18,37 @@ describe('mergeMetadata', () => {
     expect(m.channelName).toBe('C');
   });
 
+  it('maps info.comments to topComments sorted by likes (null like_count → 0)', () => {
+    const probed = { duration: 900, width: 1920, height: 1080, fps: 30, codec: 'h264' };
+    const info = {
+      comments: [
+        { text: 'meh', like_count: null },
+        { text: '3:42 best part', like_count: 900 },
+        { text: 'first', like_count: 3 },
+      ],
+    };
+    const m = mergeMetadata('id1', probed, info);
+    expect(m.topComments).toEqual([
+      { text: '3:42 best part', likes: 900 },
+      { text: 'first', likes: 3 },
+      { text: 'meh', likes: 0 },
+    ]);
+  });
+
+  it('caps topComments at 100', () => {
+    const probed = { duration: 900, width: 1920, height: 1080, fps: 30, codec: 'h264' };
+    const comments = Array.from({ length: 150 }, (_, i) => ({ text: `c${i}`, like_count: i }));
+    const m = mergeMetadata('id1', probed, { comments });
+    expect(m.topComments).toHaveLength(100);
+    expect(m.topComments![0]).toEqual({ text: 'c149', likes: 149 }); // most-liked first
+  });
+
+  it('leaves topComments undefined when info has no comments', () => {
+    const probed = { duration: 900, width: 1920, height: 1080, fps: 30, codec: 'h264' };
+    expect(mergeMetadata('id1', probed, { title: 't' }).topComments).toBeUndefined();
+    expect(mergeMetadata('id1', probed, null).topComments).toBeUndefined();
+  });
+
   it('tolerates a missing info.json (null)', () => {
     const probed = { duration: 10, width: 640, height: 480, fps: 25, codec: 'h264' };
     const m = mergeMetadata('uuid-1', probed, null);

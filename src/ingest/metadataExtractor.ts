@@ -10,6 +10,12 @@ export function mergeMetadata(jobId: string, probed: Probed, info: any | null): 
   const chapters = Array.isArray(info?.chapters)
     ? info.chapters.map((c: any) => ({ title: c.title ?? '', start: c.start_time ?? 0, end: c.end_time ?? 0 }))
     : [];
+  const topComments = Array.isArray(info?.comments)
+    ? info.comments
+        .map((c: any) => ({ text: String(c.text ?? ''), likes: c.like_count ?? 0 }))
+        .sort((a: { likes: number }, b: { likes: number }) => b.likes - a.likes)
+        .slice(0, 100)
+    : undefined;
   return {
     jobId,
     title: info?.title ?? jobId,
@@ -19,6 +25,7 @@ export function mergeMetadata(jobId: string, probed: Probed, info: any | null): 
     description: info?.description ?? '',
     viewCount: info?.view_count, likeCount: info?.like_count, commentCount: info?.comment_count,
     tags: info?.tags, uploadDate: info?.upload_date, channelName: info?.channel,
+    topComments,
   };
 }
 

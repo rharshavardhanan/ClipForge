@@ -1,4 +1,5 @@
 import type { AudioEnergyLayer, SemanticWindow, TriggerHit, WindowScore } from '../types/index.js';
+import type { CommentBoost } from '../analysis/commentSignals.js';
 
 const WINDOW = 30;
 const STEP = 15;
@@ -21,6 +22,7 @@ function findOverlappingSemantic(
 
 export function scoreWindows(
   duration: number, triggers: TriggerHit[], audio: AudioEnergyLayer, semantic: SemanticWindow[] = [],
+  comments: CommentBoost[] = [],
 ): WindowScore[] {
   const windows: WindowScore[] = [];
   for (let start = 0; start < duration; start += STEP) {
@@ -31,10 +33,15 @@ export function scoreWindows(
     const audioScore = pts.length ? pts.reduce((a, p) => a + p.rms, 0) / pts.length : 0;
     const overlapping = findOverlappingSemantic(start, end, semantic);
     const semanticScore = overlapping ? overlapping.semantic_score : 0;
-    const composite = semantic.length > 0
+    const commentSum = comments.filter((b) => b.time >= start && b.time < end).reduce((a, b) => a + b.weight, 0);
+    const commentScore = Math.min(10, commentSum);
+    const base = semantic.length > 0
       ? semanticScore * 0.5 + audioScore * 0.3 + triggerScore * 0.2
       : triggerScore * 0.6 + audioScore * 0.4;
-    windows.push({ start, end, triggerScore, audioScore, semanticScore, composite });
+    // Viewer-flagged moments are an additive bonus (max +1.5) so the score is unchanged
+    // when comments are unavailable (cached pre-comment downloads, non-YT sources).
+    const composite = base + commentScore * 0.15;
+    windows.push({ start, end, triggerScore, audioScore, semanticScore, commentScore, composite });
   }
   return windows;
 }

@@ -17,6 +17,9 @@ export function buildYtdlpArgs(url: string, outDir: string): string[] {
     '--merge-output-format', 'mp4',
     '--write-auto-subs', '--write-subs', '--sub-langs', 'en,en-US,en-GB,en-orig', '--sub-format', 'json3',
     '--write-info-json', '--no-playlist',
+    // Top comments feed the viewer-flagged-moment signal (commentSignals). Cap at 100
+    // top-sorted top-level comments (no replies) to keep the fetch fast.
+    '--write-comments', '--extractor-args', 'youtube:comment_sort=top;max_comments=100,all,0',
     '--retries', '5', '--fragment-retries', '5',
     '--newline', '-o', join(outDir, 'video.%(ext)s'),
   ];
