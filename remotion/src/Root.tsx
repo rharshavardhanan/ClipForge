@@ -1,6 +1,7 @@
-import { Composition } from 'remotion';
+import { Composition, Still } from 'remotion';
 import { CaptionedClip, type ClipProps } from './CaptionedClip';
 import { RankingVideo } from './RankingVideo';
+import { ThumbCard, type ThumbProps } from './ThumbCard';
 import { totalFrames, type RankingProps } from './rankingLogic';
 
 export const RemotionRoot: React.FC = () => (
@@ -31,6 +32,13 @@ export const RemotionRoot: React.FC = () => (
         durationInFrames: totalFrames(props.items ?? [], props.cardFrames ?? 45),
         fps: props.fps ?? 30,
       })}
+    />
+    <Still
+      id="ThumbCard"
+      component={ThumbCard}
+      width={1280}
+      height={720}
+      defaultProps={{ framePath: '', text: 'WAIT FOR IT', accent: '#FFD700' } as ThumbProps}
     />
   </>
 );
