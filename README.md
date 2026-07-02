@@ -70,8 +70,13 @@ node dist/cli/index.js ui        # → http://localhost:3210
 ```
 --top <n>              max clips to export             (all/process: 3, batch: 5)
 --min-score <x>        absolute composite floor        (default: auto)
+--mode <m>             auto | clippies | mindcuts      (default: auto-detect per video)
+--broll                force contextual B-roll (narrative overlay) on
+--no-broll             disable contextual B-roll       (default: on for mindcuts)
+--broll-dir <p>        B-roll cache folder             (default: ./broll_cache)
+--max-broll <n>        max overlays per clip           (default: mode-dependent)
 --style <preset>       mrbeast | hormozi | gadzhi | gaming | podcast |
-                       cinematic | minimal | card | bold        (default: bold)
+                       cinematic | minimal | card | bold   (default: the mode's preset)
 --accent <hex>         accent / active-word color      (default: #FFD700)
 --font <name>          anton|bangers|archivo|montserrat|poppins|inter
 --font-size <px>       caption size override
@@ -88,6 +93,35 @@ node dist/cli/index.js ui        # → http://localhost:3210
 ```
 
 `batch` adds `--per-video-cap <n>` (stop one video monopolizing the leaderboard) and `--ranking` (render the countdown video after export). `rank` takes `--accent` and `--card-seconds`.
+
+---
+
+## Content modes (v6)
+
+Two editing grammars; `--mode auto` (default) picks one per video from the title/channel, the semantic profile, and duration:
+
+| | **Clippies** — creator energy | **MindCuts** — podcast/story |
+|---|---|---|
+| Clip length | 15–45s (soft cap 25s) | 20–60s (soft cap 45s) |
+| Ranking favors | humor, surprise, intensity, sharp points | wisdom, storytelling, controversy, relatability |
+| Punch zooms | full punch | subtle (~half amplitude) |
+| Caption default | `mrbeast` | `podcast` |
+| Contextual B-roll | off by default | **on by default** (up to 4 overlays/clip) |
+
+## Contextual B-roll (narrative overlay)
+
+For each exported clip, ClipForge asks Claude where B-roll would heighten the story — named
+people get their real footage (*"Toto Wolff" → Toto Wolff Mercedes F1*), abstractions get
+visual metaphors (*discipline → training montage*), emotions get relatable reaction shots.
+Each cue becomes a YouTube search (`yt-dlp`), candidates are relevance-scored by Claude
+(**only matches >8/10 are used**), and a short ≤720p segment is cached in `./broll_cache/`.
+
+At render time the overlay is a **narrative overlay**: the A-roll keeps playing underneath —
+the speaker's voice continues seamlessly — while the visual switches to the B-roll for 1.5–6s.
+The hook (first 3s) and the payoff (last 2s) always stay on the speaker; overlays never cover
+more than 40% of a clip; arrow callouts are suppressed while B-roll covers the face.
+Placements are recorded in `broll_manifest.json` and each clip's `clip.json`. Requires an
+LLM key (Claude primary, Gemini fallback) — without one, clips render without B-roll.
 
 ---
 
@@ -177,11 +211,12 @@ All outputs land in `workspace/exports/<jobId>/` (batches: `workspace/exports/ba
 | `clip_NNN_hashtags.txt` | Full hashtag set (creator + viral + sentiment + niche), one per line |
 | `clip_NNN_hook.txt` | Uppercase hook text (matches the burned-in hook card) |
 | `clips_manifest.json` | Job-level summary (batches record each clip's source video) |
+| `broll_manifest.json` | Per-clip narrative-overlay placements: entity, query, source URL, cached file, timing |
 | `ranking_final.mp4` | #N→#1 countdown video (`--ranking` or `rank` command) |
 | `ranking_titles.txt` | Countdown title options + per-rank lines |
 | `ranking_description.txt` | Ranking video SEO description + hashtags |
 
-Clip length is adaptive: sentence-snapped 15–30s by default, extending toward 60s only while the surrounding moments hold peak-level heat (setup/payoff never cut mid-arc).
+Clip length is adaptive and mode-aware: sentence-snapped under the mode's soft cap (clippies 25s, mindcuts 45s), extending toward the mode max (45s / 60s) only while the surrounding moments hold peak-level heat (setup/payoff never cut mid-arc).
 
 **Fresh clips on re-runs:** every exported clip's time-range is recorded per source video; running the same video again automatically skips that material and surfaces new moments (`--allow-repeats` to reuse). **Arrow callouts:** on a clip's 1–2 strongest moments an animated arrow points at the speaker's face (only when face tracking found one — arrows never point at nothing; disabled together with `--no-zooms`).
 

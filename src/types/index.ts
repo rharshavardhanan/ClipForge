@@ -64,10 +64,31 @@ export interface ClipCompositionProps {
   caption?: import('../captions/presets.js').CaptionStyle;
   /** Punch zooms on emphasized moments (EG2). Default true. */
   zooms?: boolean;
+  /** Punch-zoom amplitude multiplier (v6 modes: clippies 1, mindcuts ~0.55). */
+  zoomIntensity?: number;
   /** Base framing: 'blur' (default) or 'crop' (smart face-crop via cropTrack). */
   framing?: 'blur' | 'crop';
   /** Arrow callouts at the speaker's face on peak moments — mirrors remotion/src/Callout.tsx. */
   callouts?: { time: number; x: number; y: number }[];
+  /** Narrative-overlay B-roll windows (v6) — muted visuals over the continuing A-roll audio. */
+  broll?: { videoPath: string; from: number; durationInFrames: number }[];
+}
+
+// Content modes (v6): clippies = high-energy creator clips, mindcuts = podcast/storytelling.
+export type ContentMode = 'clippies' | 'mindcuts';
+
+// Contextual B-roll engine (v6) — narrative overlay
+export type BrollKind = 'person' | 'place' | 'company' | 'object' | 'action' | 'emotion' | 'concept' | 'event';
+/** One LLM-extracted B-roll opportunity; times are clip-relative seconds. */
+export interface BrollCue { start: number; end: number; entity: string; kind: BrollKind; query: string; }
+/** One YouTube search result considered as B-roll source material. */
+export interface BrollCandidate { id: string; url: string; title: string; channel?: string; durationSec: number; }
+/** A downloaded B-roll asset placed on the clip timeline (narrative overlay window). */
+export interface BrollSegment {
+  file: string;               // absolute path of the cached segment
+  atSec: number;              // overlay start, clip-relative
+  durationSec: number;
+  entity: string; kind: BrollKind; query: string; sourceUrl: string;
 }
 
 // Ranking video render mode (RV1/RV2) — mirrors remotion/src/rankingLogic.ts
@@ -86,4 +107,6 @@ export interface VideoAnalysis {
   audio: AudioEnergyLayer;
   semantic: SemanticWindow[];
   candidates: ClipCandidate[];
+  /** Content mode resolved for this video (v6): explicit --mode or auto-detected. */
+  mode: ContentMode;
 }

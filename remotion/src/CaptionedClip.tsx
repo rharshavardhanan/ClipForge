@@ -1,6 +1,8 @@
 import { AbsoluteFill, OffthreadVideo, staticFile, useCurrentFrame, useVideoConfig } from 'remotion';
 import { CaptionTrack } from './Caption';
 import { HookCard } from './HookCard';
+import { Broll } from './Broll';
+import type { BrollWindow } from './brollLogic';
 import { Callouts, type CalloutSpec } from './Callout';
 import type { CaptionWord } from './captionLogic';
 import { reframeStyle, type CropKeyframe } from './reframe';
@@ -14,20 +16,24 @@ export type ClipProps = {
   cropTrack?: CropKeyframe[]; srcW?: number; srcH?: number;
   caption?: CaptionStyle;
   zooms?: boolean;
+  /** Punch-zoom amplitude multiplier (1 = full punch; mindcuts ~0.55 = subtle). */
+  zoomIntensity?: number;
   /** 'blur' = original video centered over a blurred backdrop (default, natural, no face cutting).
    *  'crop' = smart face-crop pan/zoom via cropTrack. */
   framing?: 'blur' | 'crop';
   /** Arrow callouts pointing at the speaker's face on peak moments (output px). */
   callouts?: CalloutSpec[];
+  /** Narrative-overlay B-roll windows (v6): muted visuals over the continuing A-roll audio. */
+  broll?: BrollWindow[];
 };
 
 export const CaptionedClip: React.FC<ClipProps> = ({
-  videoPath, words, accentColor, showHookCard, hookText, cropTrack, srcW, srcH, caption, zooms, framing, callouts,
+  videoPath, words, accentColor, showHookCard, hookText, cropTrack, srcW, srcH, caption, zooms, zoomIntensity, framing, callouts, broll,
 }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const t = frame / fps;
-  const punchScale = zooms === false ? 1 : punchScaleAt(buildZoomEvents(words), t);
+  const punchScale = zooms === false ? 1 : punchScaleAt(buildZoomEvents(words), t, zoomIntensity ?? 1);
   const src = staticFile(videoPath);
 
   // Default to blur unless a crop track is explicitly supplied.
@@ -56,6 +62,8 @@ export const CaptionedClip: React.FC<ClipProps> = ({
           </AbsoluteFill>
         </>
       )}
+      {/* Narrative overlay: the A-roll above stays mounted (audio continues), the visual switches. */}
+      {broll && broll.length > 0 && <Broll windows={broll} />}
       {callouts && callouts.length > 0 && <Callouts callouts={callouts} accent={accentColor} />}
       {showHookCard && <HookCard text={hookText} />}
       <CaptionTrack words={words} accentColor={accentColor} caption={caption} />

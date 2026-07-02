@@ -1,7 +1,7 @@
 import { run } from '../utils/cmd.js';
 import { withRetry } from '../utils/retry.js';
 import { logger } from '../utils/logger.js';
-import type { CaptionWord, ClipCompositionProps, CropKeyframe } from '../types/index.js';
+import type { BrollSegment, CaptionWord, ClipCompositionProps, CropKeyframe } from '../types/index.js';
 import type { CaptionStyle } from './presets.js';
 import { copyFile, writeFile, mkdir, rm } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
@@ -33,13 +33,30 @@ export interface RenderOpts {
   hookText?: string;
   caption?: CaptionStyle;
   zooms?: boolean;
+  /** Punch-zoom amplitude multiplier (v6 modes: clippies 1, mindcuts ~0.55). */
+  zoomIntensity?: number;
   framing?: 'blur' | 'crop';
   /** Arrow callouts pointing at the speaker's face on peak moments (output px). */
   callouts?: { time: number; x: number; y: number }[];
+  /** Narrative-overlay B-roll segments (v6) — files get staged into remotion/public. */
+  broll?: BrollSegment[];
+}
+
+/** PURE: clip-relative B-roll segments → Remotion Sequence windows (staged rel paths + frames). */
+export function buildBrollWindows(
+  broll: BrollSegment[], fps: number, stagedRelPaths: string[],
+): { videoPath: string; from: number; durationInFrames: number }[] {
+  return broll.map((b, i) => ({
+    videoPath: stagedRelPaths[i],
+    from: Math.round(b.atSec * fps),
+    durationInFrames: Math.max(1, Math.round(b.durationSec * fps)),
+  }));
 }
 
 /** PURE: builds the Remotion composition props from render opts + a probed duration. */
-export function buildProps(opts: RenderOpts, probedDurationSec: number, videoPathRel: string): ClipCompositionProps {
+export function buildProps(
+  opts: RenderOpts, probedDurationSec: number, videoPathRel: string, brollRelPaths: string[] = [],
+): ClipCompositionProps {
   return {
     videoPath: videoPathRel,
     words: opts.words,
@@ -55,7 +72,10 @@ export function buildProps(opts: RenderOpts, probedDurationSec: number, videoPat
     ...(opts.caption ? { caption: opts.caption } : {}),
     ...(opts.framing ? { framing: opts.framing } : {}),
     ...(opts.callouts && opts.callouts.length > 0 ? { callouts: opts.callouts } : {}),
+    ...(opts.broll && opts.broll.length > 0
+      ? { broll: buildBrollWindows(opts.broll, opts.fps, brollRelPaths) } : {}),
     zooms: opts.zooms ?? true,
+    ...(opts.zoomIntensity !== undefined ? { zoomIntensity: opts.zoomIntensity } : {}),
   };
 }
 
@@ -66,11 +86,17 @@ export async function render(opts: RenderOpts): Promise<void> {
   await mkdir(publicDir, { recursive: true });
   const publicCopy = join(publicDir, name);
 
-  const props: ClipCompositionProps = buildProps(opts, p.duration, join('input', name));
+  // Stage B-roll overlay assets next to the main input (unique per-clip names).
+  const broll = opts.broll ?? [];
+  const brollCopies = broll.map((b, i) => join(publicDir, `broll_${basename(name, '.mp4')}_${i}.mp4`));
+  const brollRel = brollCopies.map((c) => join('input', basename(c)));
+
+  const props: ClipCompositionProps = buildProps(opts, p.duration, join('input', name), brollRel);
   const propsPath = join(REMOTION_DIR, `props_${name}.json`);
 
   try {
     await copyFile(opts.rawClipPath, publicCopy);
+    for (let i = 0; i < broll.length; i++) await copyFile(broll[i].file, brollCopies[i]);
     await writeFile(propsPath, JSON.stringify(props));
     // Remotion prints one "Rendered N/total" line per frame (hundreds per clip). Throttle to
     // ~1/sec so the log stays readable and doesn't look frozen on a slow-moving counter.
@@ -89,6 +115,7 @@ export async function render(opts: RenderOpts): Promise<void> {
     );
   } finally {
     await rm(publicCopy, { force: true });
+    for (const c of brollCopies) await rm(c, { force: true });
     await rm(propsPath, { force: true });
   }
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildRenderArgs, buildProps, type RenderOpts } from '../../src/captions/remotionRenderer.js';
+import { buildRenderArgs, buildProps, buildBrollWindows, type RenderOpts } from '../../src/captions/remotionRenderer.js';
 import { CAPTION_PRESETS } from '../../src/captions/presets.js';
 
 describe('buildRenderArgs', () => {
@@ -79,5 +79,29 @@ describe('buildProps', () => {
     expect(props.cropTrack).toHaveLength(1);
     expect(props.srcW).toBe(1920);
     expect(props.srcH).toBe(1080);
+  });
+});
+
+describe('B-roll props (v6)', () => {
+  it('buildBrollWindows converts seconds to frames with staged rel paths', () => {
+    const wins = buildBrollWindows(
+      [{ file: '/c/a.mp4', atSec: 4, durationSec: 3.5, entity: 'e', kind: 'person', query: 'q', sourceUrl: 'u' }],
+      30, ['input/broll_clip_0.mp4'],
+    );
+    expect(wins).toEqual([{ videoPath: 'input/broll_clip_0.mp4', from: 120, durationInFrames: 105 }]);
+  });
+  it('buildProps carries broll windows and zoomIntensity', () => {
+    const props = buildProps({
+      rawClipPath: 'x.mp4', words: [], outPath: 'o.mp4', fps: 30, zoomIntensity: 0.55,
+      broll: [{ file: '/c/a.mp4', atSec: 4, durationSec: 2, entity: 'e', kind: 'person', query: 'q', sourceUrl: 'u' }],
+    }, 20, 'input/o.mp4', ['input/broll_o_0.mp4']);
+    expect(props.zoomIntensity).toBe(0.55);
+    expect(props.broll).toHaveLength(1);
+    expect(props.broll![0].from).toBe(120);
+  });
+  it('buildProps omits broll when none supplied', () => {
+    const props = buildProps({ rawClipPath: 'x.mp4', words: [], outPath: 'o.mp4', fps: 30 }, 20, 'input/o.mp4');
+    expect(props.broll).toBeUndefined();
+    expect(props.zoomIntensity).toBeUndefined();
   });
 });

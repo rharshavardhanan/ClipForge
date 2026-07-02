@@ -10,6 +10,7 @@ function makeAnalysis(jobId: string, url: string): VideoAnalysis {
       chapters: [], description: '',
     },
     segments: [], triggers: [], audio: { rms_curve: [], silence_regions: [] }, semantic: [], candidates: [],
+    mode: 'clippies',
   };
 }
 

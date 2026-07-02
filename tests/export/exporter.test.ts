@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { buildClipJson, buildManifest, writeExports } from '../../src/export/exporter.js';
+import { buildClipJson, buildManifest, writeExports, buildBrollEntries, buildBrollManifest } from '../../src/export/exporter.js';
 import { buildSeoPack } from '../../src/export/seo.js';
 import type { RankedClip, VideoMetadata } from '../../src/types/index.js';
 
@@ -60,5 +60,28 @@ describe('exporter', () => {
     }
     const j = JSON.parse(await readFile(join(dir, 'clip_001.json'), 'utf8'));
     expect(j.seo.hashtags).toContain('#shorts');
+  });
+});
+
+describe('B-roll exports (v6)', () => {
+  const seg = { file: '/cache/ab12.mp4', atSec: 5, durationSec: 4, entity: 'Toto Wolff', kind: 'person' as const, query: 'Toto Wolff Mercedes F1', sourceUrl: 'https://y/w' };
+  it('buildBrollEntries maps segments to manifest rows (basename only)', () => {
+    expect(buildBrollEntries([seg])).toEqual([{
+      entity: 'Toto Wolff', kind: 'person', query: 'Toto Wolff Mercedes F1',
+      source_url: 'https://y/w', cache_file: 'ab12.mp4', at_sec: 5, duration_sec: 4,
+    }]);
+  });
+  it('buildBrollManifest keys by clip_id and skips clips without B-roll', () => {
+    const clips = [{ clip_id: 'clip_001' }, { clip_id: 'clip_002' }] as never[];
+    const map = new Map([['clip_001', [seg]], ['clip_002', []]]);
+    const m = buildBrollManifest(clips, map);
+    expect(Object.keys(m)).toEqual(['clip_001']);
+    expect(buildBrollManifest(clips, undefined)).toEqual({});
+  });
+  it('buildClipJson includes the broll block only when segments exist', () => {
+    const clip = { clip_id: 'c', rank: 1, start: 0, end: 30, duration: 30, composite_score: 5, semantic_score: 0, audio_score: 0, visual_score: 0, trigger_score: 0, pacing_score: 0, metadata_score: 0, hook_moment: '', clip_titles: [], is_standalone: true, recommended_duration: 30, reason: '', transcript_excerpt: '' } as never;
+    const files = { final: 'f', raw: 'r', srt: 's' };
+    expect((buildClipJson(clip, 'j', files, undefined, [seg]) as { broll?: unknown[] }).broll).toHaveLength(1);
+    expect('broll' in buildClipJson(clip, 'j', files)).toBe(false);
   });
 });
