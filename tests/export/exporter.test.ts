@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { buildClipJson, buildManifest } from '../../src/export/exporter.js';
+import { mkdtemp, readFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { buildClipJson, buildManifest, writeExports } from '../../src/export/exporter.js';
+import { buildSeoPack } from '../../src/export/seo.js';
 import type { RankedClip, VideoMetadata } from '../../src/types/index.js';
 
 const clip: RankedClip = {
@@ -38,5 +42,23 @@ describe('exporter', () => {
     expect(m.clips_generated).toBe(0);
     expect(m.top_score).toBe(0);
     expect(m.avg_score).toBe(0);
+  });
+
+  it('clip json carries the seo pack and optional thumbnail file', () => {
+    const pack = buildSeoPack(clip, meta);
+    const j: any = buildClipJson(clip, 'H14bBuluwB8',
+      { final: 'f.mp4', raw: 'r.mp4', srt: 's.srt', thumbnail: 'clip_001_thumbnail.png' }, pack);
+    expect(j.seo.title.length).toBeGreaterThan(0);
+    expect(j.files.thumbnail).toBe('clip_001_thumbnail.png');
+  });
+
+  it('writeExports writes per-clip SEO text files + clip.json with seo block', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'exports-'));
+    await writeExports(dir, 'H14bBuluwB8', 'https://y/watch?v=H14bBuluwB8', meta, [clip]);
+    for (const f of ['clip_001_title.txt', 'clip_001_description.txt', 'clip_001_hashtags.txt', 'clip_001_hook.txt']) {
+      expect((await readFile(join(dir, f), 'utf8')).length).toBeGreaterThan(0);
+    }
+    const j = JSON.parse(await readFile(join(dir, 'clip_001.json'), 'utf8'));
+    expect(j.seo.hashtags).toContain('#shorts');
   });
 });

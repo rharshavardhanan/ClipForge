@@ -24,6 +24,7 @@ import { render } from '../../captions/remotionRenderer.js';
 import { scanLibrary, pickTrack, sentimentToMood } from '../../music/library.js';
 import { mixMusic } from '../../music/mixer.js';
 import { writeExports } from '../../export/exporter.js';
+import { buildSeoPack, type SeoPack } from '../../export/seo.js';
 import { logger } from '../../utils/logger.js';
 import type { RankedClip, TranscriptSegment, VideoAnalysis } from '../../types/index.js';
 import type { CaptionStyle } from '../../captions/presets.js';
@@ -219,12 +220,17 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
   // stall-watchdog) is skipped so it can't lose the whole batch. Only clips that fully export
   // go into the manifest.
   const succeeded: SourcedRankedClip[] = [];
+  const packs = new Map<string, SeoPack>();
   for (const { clip, source } of selected) {
     const sp2 = ora(`[${clip.clip_id}] (${source.jobId}) extract + caption…`).start();
     const finalPath = join(exportsDir, `${clip.clip_id}_final.mp4`);
     const clipsDir = join(WS, 'clips', source.jobId);
 
     try {
+      // SEO pack from THIS clip's source metadata (batch runs mix creators).
+      const pack = buildSeoPack(clip, source.meta);
+      packs.set(clip.clip_id, pack);
+
       const clipWords = source.segments.flatMap((s) => s.words).filter((w) => w.end > clip.start && w.start < clip.end);
       const captionWords = buildCaptionWords(clipWords, clip.start, source.triggers.map((t) => t.phrase));
       await writeSrt(captionWords, join(exportsDir, `${clip.clip_id}.srt`));
@@ -274,7 +280,7 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
   if (ranked.length < selected.length) {
     logger.warn(`${selected.length - ranked.length}/${selected.length} clip(s) failed/skipped; manifest has the ${ranked.length} that exported.`);
   }
-  await writeExports(exportsDir, id, primary.url, primary.meta, ranked);
+  await writeExports(exportsDir, id, primary.url, primary.meta, ranked, packs);
 
   const head = analyses.length === 1 ? ['Rank', 'Score', 'Dur', 'Excerpt'] : ['Rank', 'Score', 'Dur', 'Source', 'Excerpt'];
   const table = new Table({ head });
