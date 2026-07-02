@@ -1,7 +1,8 @@
 /**
- * YouTube OAuth (Desktop-app loopback flow). One-time `clipforge auth youtube` opens the
- * browser for consent and stores the refresh token locally; getAccessToken() exchanges it
- * per run. Plain fetch — no googleapis SDK.
+ * YouTube OAuth (Desktop-app loopback flow), multi-channel. Run `clipforge auth youtube`
+ * once per channel — Google's account picker is where you choose the channel/brand account;
+ * each consent stores a refresh token labeled with the channel's name. Uploads pick a
+ * channel by name/id. Plain fetch — no googleapis SDK.
  */
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
@@ -9,10 +10,11 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { logger } from '../utils/logger.js';
 
-const SCOPE = 'https://www.googleapis.com/auth/youtube.upload';
+const SCOPES = 'https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly';
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 
-export interface YtAuth { client_id: string; refresh_token: string; }
+export interface YtChannel { channel_id: string; title: string; refresh_token: string; }
+export interface YtAuthFile { channels: YtChannel[]; }
 
 /** PURE: Google consent URL for the loopback flow. */
 export function buildAuthUrl(clientId: string, redirectUri: string): string {
@@ -20,7 +22,7 @@ export function buildAuthUrl(clientId: string, redirectUri: string): string {
   u.searchParams.set('client_id', clientId);
   u.searchParams.set('redirect_uri', redirectUri);
   u.searchParams.set('response_type', 'code');
-  u.searchParams.set('scope', SCOPE);
+  u.searchParams.set('scope', SCOPES);
   u.searchParams.set('access_type', 'offline');
   u.searchParams.set('prompt', 'consent');
   return u.toString();
@@ -30,13 +32,38 @@ export function authFilePath(): string {
   return join(process.env.WORKSPACE_DIR ?? './workspace', '.auth', 'youtube.json');
 }
 
-export async function saveAuth(auth: YtAuth): Promise<void> {
+export async function saveAuthFile(auth: YtAuthFile): Promise<void> {
   await mkdir(dirname(authFilePath()), { recursive: true });
   await writeFile(authFilePath(), JSON.stringify(auth, null, 2));
 }
 
-export async function loadAuth(): Promise<YtAuth | null> {
-  try { return JSON.parse(await readFile(authFilePath(), 'utf8')); } catch { return null; }
+/** Load the channel store; silently migrates the pre-multichannel single-token shape. */
+export async function loadAuthFile(): Promise<YtAuthFile> {
+  let raw: any;
+  try { raw = JSON.parse(await readFile(authFilePath(), 'utf8')); } catch { return { channels: [] }; }
+  if (Array.isArray(raw?.channels)) return raw as YtAuthFile;
+  if (typeof raw?.refresh_token === 'string') {
+    return { channels: [{ channel_id: 'default', title: 'default', refresh_token: raw.refresh_token }] };
+  }
+  return { channels: [] };
+}
+
+/**
+ * PURE: resolve which channel to use. Exact channel_id match wins, else case-insensitive
+ * title match. No query: a single connected channel is auto-picked; multiple → error
+ * naming them (the caller should pass --channel / a dialog selection).
+ */
+export function pickChannel(channels: YtChannel[], query?: string): YtChannel {
+  if (channels.length === 0) throw new Error('Not authenticated with YouTube — run: ./start.sh auth youtube');
+  if (!query) {
+    if (channels.length === 1) return channels[0];
+    throw new Error(`Multiple YouTube channels connected — pass --channel. Available: ${channels.map((c) => c.title).join(', ')}`);
+  }
+  const byId = channels.find((c) => c.channel_id === query);
+  if (byId) return byId;
+  const byTitle = channels.find((c) => c.title.toLowerCase() === query.toLowerCase());
+  if (byTitle) return byTitle;
+  throw new Error(`No connected channel matches "${query}". Available: ${channels.map((c) => c.title).join(', ')}`);
 }
 
 function requireClient(): { id: string; secret: string } {
@@ -51,33 +78,49 @@ function requireClient(): { id: string; secret: string } {
   return { id, secret };
 }
 
-let cached: { token: string; expiresAt: number } | null = null;
+const tokenCache = new Map<string, { token: string; expiresAt: number }>();
 /** Test hook — resets the in-memory access-token cache. */
-export function _clearTokenCache(): void { cached = null; }
+export function _clearTokenCache(): void { tokenCache.clear(); }
 
-/** Refresh-token → access-token exchange, cached in-memory until ~expiry. */
-export async function getAccessToken(fetchFn: typeof fetch = fetch): Promise<string> {
+/** Refresh-token → access-token for the resolved channel, cached in-memory until ~expiry. */
+export async function getAccessToken(channel?: string, fetchFn: typeof fetch = fetch): Promise<string> {
+  const auth = await loadAuthFile();
+  const ch = pickChannel(auth.channels, channel);
+  const cached = tokenCache.get(ch.channel_id);
   if (cached && Date.now() < cached.expiresAt) return cached.token;
+
   const { id, secret } = requireClient();
-  const auth = await loadAuth();
-  if (!auth) throw new Error('Not authenticated with YouTube — run: ./start.sh auth youtube');
   const res = await fetchFn(TOKEN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
       client_id: id, client_secret: secret,
-      refresh_token: auth.refresh_token, grant_type: 'refresh_token',
+      refresh_token: ch.refresh_token, grant_type: 'refresh_token',
     }),
   });
   const j: any = await res.json();
   if (!res.ok || !j.access_token) {
-    throw new Error(`YouTube token refresh failed (${j.error ?? res.status}) — run: ./start.sh auth youtube`);
+    throw new Error(`YouTube token refresh failed for "${ch.title}" (${j.error ?? res.status}) — run: ./start.sh auth youtube`);
   }
-  cached = { token: j.access_token, expiresAt: Date.now() + (Number(j.expires_in ?? 3600) - 60) * 1000 };
-  return cached.token;
+  tokenCache.set(ch.channel_id, {
+    token: j.access_token,
+    expiresAt: Date.now() + (Number(j.expires_in ?? 3600) - 60) * 1000,
+  });
+  return j.access_token;
 }
 
-/** One-time interactive consent: loopback server + browser, then save the refresh token. */
+/** Fetch the authorized channel's id+title with a fresh access token. */
+async function fetchChannelInfo(accessToken: string, fetchFn: typeof fetch): Promise<{ channel_id: string; title: string }> {
+  const res = await fetchFn('https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const j: any = await res.json();
+  const item = j?.items?.[0];
+  if (!res.ok || !item) return { channel_id: `unknown_${Date.now()}`, title: 'unnamed channel' };
+  return { channel_id: item.id, title: item.snippet?.title ?? item.id };
+}
+
+/** One-time interactive consent per channel: loopback server + browser, then upsert the channel. */
 export async function authYoutube(fetchFn: typeof fetch = fetch): Promise<void> {
   const { id, secret } = requireClient();
 
@@ -120,6 +163,11 @@ export async function authYoutube(fetchFn: typeof fetch = fetch): Promise<void> 
   if (!res.ok || !j.refresh_token) {
     throw new Error(`Token exchange failed: ${j.error_description ?? j.error ?? res.status}`);
   }
-  await saveAuth({ client_id: id, refresh_token: j.refresh_token });
-  logger.info(`YouTube connected — token saved to ${authFilePath()}`);
+
+  const info = await fetchChannelInfo(j.access_token, fetchFn);
+  const auth = await loadAuthFile();
+  const others = auth.channels.filter((c) => c.channel_id !== info.channel_id && c.channel_id !== 'default');
+  await saveAuthFile({ channels: [...others, { ...info, refresh_token: j.refresh_token }] });
+  logger.info(`YouTube connected: "${info.title}" — token saved to ${authFilePath()}`);
+  logger.info('Run `./start.sh auth youtube` again with another Google account/brand channel to add more channels.');
 }

@@ -16,6 +16,8 @@ export async function runAuthYoutube(): Promise<void> {
 export interface UploadOpts {
   clips?: string; privacy: YtPrivacy; dryRun?: boolean; force?: boolean; json?: boolean;
   title?: string; description?: string;
+  /** Channel title or id (required when multiple channels are connected). */
+  channel?: string;
 }
 
 /** PURE: manifest clips → clip ids to upload, in manifest order, optionally CSV-filtered. */
@@ -62,7 +64,7 @@ export async function runUpload(exportsDir: string, opts: UploadOpts): Promise<v
 
     const sp = ora(`[${id}] uploading to YouTube…`).start();
     try {
-      const token = await getAccessToken();
+      const token = await getAccessToken(opts.channel);
       const r = await uploadVideo(join(dir, clipJson.files.final), meta, token);
       const locked = r.privacyStatus !== opts.privacy;
       try {

@@ -11,8 +11,11 @@ function sentimentTone(s?: string): 'zinc' | 'gold' | 'green' | 'red' {
   return 'zinc';
 }
 
+interface Channel { id: string; title: string; }
+
 interface PublishState {
   job: string; clip: string; title: string; description: string; privacy: string;
+  channels: Channel[]; channel: string;
   busy: boolean; result?: string; error?: string;
 }
 
@@ -23,12 +26,18 @@ export function ClipsTab({ jobs, onRefresh }: { jobs: ExportJob[]; onRefresh: ()
 
   async function openPublish(jobId: string, c: ExportJob['clips'][number]) {
     let seo: { title?: string; description?: string } = {};
+    let channels: Channel[] = [];
     try {
-      const r = await fetch(`/api/video?job=${encodeURIComponent(jobId)}&file=${encodeURIComponent(c.files.json)}`);
-      seo = (await r.json())?.seo ?? {};
+      const [clipRes, chRes] = await Promise.all([
+        fetch(`/api/video?job=${encodeURIComponent(jobId)}&file=${encodeURIComponent(c.files.json)}`),
+        fetch('/api/channels'),
+      ]);
+      seo = (await clipRes.json())?.seo ?? {};
+      channels = (await chRes.json())?.channels ?? [];
     } catch { /* dialog still opens with fallbacks */ }
     setPub({
       job: jobId, clip: c.clipId, privacy: 'public', busy: false,
+      channels, channel: channels[0]?.id ?? '',
       title: seo.title ?? c.title ?? c.clipId, description: seo.description ?? '',
     });
   }
@@ -46,7 +55,7 @@ export function ClipsTab({ jobs, onRefresh }: { jobs: ExportJob[]; onRefresh: ()
     try {
       const r = await fetch('/api/publish', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ job: pub.job, clip: pub.clip, title: pub.title, description: pub.description, privacy: pub.privacy }),
+        body: JSON.stringify({ job: pub.job, clip: pub.clip, title: pub.title, description: pub.description, privacy: pub.privacy, channel: pub.channel }),
       });
       const j = await r.json();
       if (j.ok) {
@@ -157,7 +166,17 @@ export function ClipsTab({ jobs, onRefresh }: { jobs: ExportJob[]; onRefresh: ()
                 <textarea className={`${inputCls} h-32 resize-y`} value={pub.description}
                   onChange={(e) => setPub({ ...pub, description: e.target.value })} />
               </Field>
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3">
+                {pub.channels.length > 0 ? (
+                  <Field label="Channel">
+                    <select className={inputCls} value={pub.channel} disabled={pub.busy}
+                      onChange={(e) => setPub({ ...pub, channel: e.target.value })}>
+                      {pub.channels.map((ch) => <option key={ch.id} value={ch.id}>{ch.title}</option>)}
+                    </select>
+                  </Field>
+                ) : (
+                  <span className="text-xs text-amber-400">No channel connected — run `./start.sh auth youtube`</span>
+                )}
                 <select className={inputCls} value={pub.privacy} disabled={pub.busy}
                   onChange={(e) => setPub({ ...pub, privacy: e.target.value })}>
                   <option value="public">Public</option>
