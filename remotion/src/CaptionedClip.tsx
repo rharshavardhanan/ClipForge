@@ -3,16 +3,18 @@ import { CaptionTrack } from './Caption';
 import { HookCard } from './HookCard';
 import type { CaptionWord } from './captionLogic';
 import { reframeStyle, type CropKeyframe } from './reframe';
+import type { CaptionStyle } from './captionStyle';
 
 // type alias (not interface) so props satisfy Remotion's Record<string, unknown> constraint
 export type ClipProps = {
   videoPath: string; words: CaptionWord[]; fps: number; durationInFrames: number;
   style: 'minimal' | 'card' | 'bold'; accentColor: string; showHookCard: boolean; hookText: string;
   cropTrack?: CropKeyframe[]; srcW?: number; srcH?: number;
+  caption?: CaptionStyle;
 };
 
 export const CaptionedClip: React.FC<ClipProps> = ({
-  videoPath, words, accentColor, showHookCard, hookText, cropTrack, srcW, srcH,
+  videoPath, words, accentColor, showHookCard, hookText, cropTrack, srcW, srcH, caption,
 }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
@@ -33,7 +35,7 @@ export const CaptionedClip: React.FC<ClipProps> = ({
         />
       </AbsoluteFill>
       {showHookCard && <HookCard text={hookText} />}
-      <CaptionTrack words={words} accentColor={accentColor} />
+      <CaptionTrack words={words} accentColor={accentColor} caption={caption} />
     </AbsoluteFill>
   );
 };

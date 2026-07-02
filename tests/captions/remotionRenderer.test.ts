@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildRenderArgs, buildProps, type RenderOpts } from '../../src/captions/remotionRenderer.js';
+import { CAPTION_PRESETS } from '../../src/captions/presets.js';
 
 describe('buildRenderArgs', () => {
   it('renders CaptionedClip with h264/crf18/yuv420p and props file', () => {
@@ -49,6 +50,13 @@ describe('buildProps', () => {
   it('computes durationInFrames from probed duration and fps', () => {
     const props = buildProps(baseOpts, 5, 'input/clip_001_final.mp4');
     expect(props.durationInFrames).toBe(150);
+  });
+
+  it('carries the caption style through when provided, omits it otherwise', () => {
+    const withStyle = buildProps({ ...baseOpts, caption: CAPTION_PRESETS.mrbeast }, 10, 'input/x.mp4');
+    expect(withStyle.caption).toEqual(CAPTION_PRESETS.mrbeast);
+    const without = buildProps(baseOpts, 10, 'input/x.mp4');
+    expect(without.caption).toBeUndefined();
   });
 
   it('carries cropTrack/srcW/srcH through when provided', () => {

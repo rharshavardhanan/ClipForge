@@ -2,6 +2,7 @@ import { run } from '../utils/cmd.js';
 import { withRetry } from '../utils/retry.js';
 import { logger } from '../utils/logger.js';
 import type { CaptionWord, ClipCompositionProps, CropKeyframe } from '../types/index.js';
+import type { CaptionStyle } from './presets.js';
 import { copyFile, writeFile, mkdir, rm } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
 import { probe } from '../utils/ffmpeg.js';
@@ -30,6 +31,7 @@ export interface RenderOpts {
   srcW?: number;
   srcH?: number;
   hookText?: string;
+  caption?: CaptionStyle;
 }
 
 /** PURE: builds the Remotion composition props from render opts + a probed duration. */
@@ -46,6 +48,7 @@ export function buildProps(opts: RenderOpts, probedDurationSec: number, videoPat
     ...(opts.cropTrack && opts.cropTrack.length > 0 ? { cropTrack: opts.cropTrack } : {}),
     ...(opts.srcW !== undefined ? { srcW: opts.srcW } : {}),
     ...(opts.srcH !== undefined ? { srcH: opts.srcH } : {}),
+    ...(opts.caption ? { caption: opts.caption } : {}),
   };
 }
 
