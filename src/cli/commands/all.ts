@@ -287,9 +287,14 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
         logger.info(`[${clip.clip_id}] music: ${basename(musicTrack)} (${mood})`);
       }
 
-      // thumbnail: loudest frame of the clip, stamped with the SEO thumbnail text
-      const thumbRel = Math.max(0, pickThumbnailTime(clip, source.audio.rms_curve) - clip.start);
-      await generateThumbnail(fullPath, thumbRel, pack.thumbnailText, join(exportsDir, `${clip.clip_id}_thumbnail.png`));
+      // thumbnail: loudest frame of the clip, stamped with the SEO thumbnail text.
+      // Never fail a fully-rendered clip over a PNG — warn and move on.
+      try {
+        const thumbRel = Math.max(0, pickThumbnailTime(clip, source.audio.rms_curve) - clip.start);
+        await generateThumbnail(fullPath, thumbRel, pack.thumbnailText, join(exportsDir, `${clip.clip_id}_thumbnail.png`));
+      } catch (e) {
+        logger.warn(`[${clip.clip_id}] thumbnail failed (clip export continues): ${e instanceof Error ? e.message : String(e)}`);
+      }
 
       // copy raw into exports for completeness
       await mkdir(exportsDir, { recursive: true });

@@ -61,5 +61,12 @@ export async function findThumbnailFont(): Promise<string | null> {
 /** Grab + stamp the thumbnail. timeSec is relative to videoPath (the clip extract). */
 export async function generateThumbnail(videoPath: string, timeSec: number, text: string, outPath: string): Promise<void> {
   const font = await findThumbnailFont();
-  await run('ffmpeg', buildThumbnailArgs(videoPath, timeSec, outPath, text || undefined, font ?? undefined));
+  try {
+    await run('ffmpeg', buildThumbnailArgs(videoPath, timeSec, outPath, text || undefined, font ?? undefined));
+  } catch (e) {
+    // Some ffmpeg builds ship without drawtext (no libfreetype) — fall back to a plain frame.
+    if (!(text && font)) throw e;
+    logger.warn('thumbnail: text overlay failed (ffmpeg without drawtext?) — writing plain frame');
+    await run('ffmpeg', buildThumbnailArgs(videoPath, timeSec, outPath));
+  }
 }
