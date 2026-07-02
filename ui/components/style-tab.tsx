@@ -66,8 +66,10 @@ function resolvePreview(cfg: StyleConfig): PresetStyle {
 
 const PREVIEW_SCALE = 0.25; // 270x480 box previews the 1080x1920 render
 
-/** Live 9:16 caption preview — sample line with the middle word active, at true relative scale. */
-function CaptionPreview({ cfg }: { cfg: StyleConfig }) {
+/** Live 9:16 caption preview — sample line with the middle word active, at true relative scale.
+ *  Plays the newest exported clip's RAW footage behind the captions when one exists
+ *  (the final has captions burned in already); falls back to a mock frame. */
+function CaptionPreview({ cfg, videoSrc }: { cfg: StyleConfig; videoSrc?: string | null }) {
   const s = resolvePreview(cfg);
   const words = ['this', 'got', 'insane'];
   const activeIdx = 1;
@@ -97,9 +99,18 @@ function CaptionPreview({ cfg }: { cfg: StyleConfig }) {
 
   return (
     <div className="relative h-[480px] w-[270px] shrink-0 overflow-hidden rounded-2xl border border-line bg-gradient-to-b from-zinc-700 via-ink-900 to-black">
-      {/* fake subject so the frame reads as video */}
-      <div className="absolute left-1/2 top-[30%] h-24 w-24 -translate-x-1/2 rounded-full bg-zinc-600/50" />
-      <div className="absolute left-1/2 top-[42%] h-40 w-36 -translate-x-1/2 rounded-t-[3rem] bg-zinc-600/40" />
+      {videoSrc ? (
+        <video
+          src={videoSrc} autoPlay muted loop playsInline
+          className="absolute inset-0 h-full w-full object-contain bg-black"
+        />
+      ) : (
+        <>
+          {/* no exports yet — fake subject so the frame reads as video */}
+          <div className="absolute left-1/2 top-[30%] h-24 w-24 -translate-x-1/2 rounded-full bg-zinc-600/50" />
+          <div className="absolute left-1/2 top-[42%] h-40 w-36 -translate-x-1/2 rounded-t-[3rem] bg-zinc-600/40" />
+        </>
+      )}
       <div
         className="absolute left-0 right-0 px-3 text-center leading-tight"
         style={s.position === 'center' ? { top: '50%', transform: 'translateY(-50%)' } : { bottom: '18%' }}
@@ -126,7 +137,11 @@ const PRESET_CSS: Record<string, React.CSSProperties & { sample?: string }> = {
   bold: { fontFamily: 'Impact, sans-serif', fontSize: 24, color: '#FFFFFF', textTransform: 'uppercase', textShadow: '2px 2px 4px black', sample: 'THE CLASSIC LOOK' },
 };
 
-export function StyleTab({ style, onChange }: { style: StyleConfig; onChange: (s: StyleConfig) => void }) {
+export function StyleTab({ style, onChange, previewSrc }: {
+  style: StyleConfig; onChange: (s: StyleConfig) => void;
+  /** URL of a raw exported clip to play behind the caption preview (null → mock frame). */
+  previewSrc?: string | null;
+}) {
   const cliFlags = [
     `--style ${style.preset}`,
     style.accent !== '#FFD700' ? `--accent "${style.accent}"` : '',
@@ -168,7 +183,7 @@ export function StyleTab({ style, onChange }: { style: StyleConfig; onChange: (s
         <h2 className="mb-1 text-lg font-bold">Caption fine-tuning</h2>
         <p className="mb-4 text-sm text-zinc-500">Each control defaults to the preset&apos;s value — override only what you want to change. The preview updates live with the exact fonts the render burns in.</p>
         <div className="flex flex-col gap-6 lg:flex-row">
-        <CaptionPreview cfg={style} />
+        <CaptionPreview cfg={style} videoSrc={previewSrc} />
         <div className="grid max-w-3xl flex-1 grid-cols-2 gap-4 sm:grid-cols-4 content-start">
           <Field label="Font">
             <select className={inputCls} value={style.font} onChange={(e) => onChange({ ...style, font: e.target.value })}>
