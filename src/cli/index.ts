@@ -35,6 +35,9 @@ function addRenderOptions(cmd: Command): Command {
     .option('--music-volume <v>', 'music bed level 0-1 before ducking', (v) => parseFloat(v), 0.25)
     .option('--music-dir <p>', 'music library folder', process.env.MUSIC_DIR ?? './music')
     .option('--no-zooms', 'disable punch zooms on emphasized moments')
+    .option('--no-sfx', 'disable sound-design SFX (whoosh on zooms, impact under hook)')
+    .option('--sfx-volume <v>', 'SFX one-shot level 0-1', (v) => parseFloat(v), 0.6)
+    .option('--sfx-dir <p>', 'SFX library folder', process.env.SFX_DIR ?? './sfx')
     .option('--delete-source', 'delete the downloaded source video + intermediates after export (frees disk)');
 }
 
@@ -43,6 +46,7 @@ function renderOpts(o: any) {
   return {
     top: o.top, minScore: o.minScore, style: o.style, accent: o.accent, caption: captionFromFlags(o),
     music: o.music, musicVolume: o.musicVolume, musicDir: o.musicDir, zooms: o.zooms,
+    sfx: o.sfx, sfxVolume: o.sfxVolume, sfxDir: o.sfxDir,
     deleteSource: o.deleteSource,
   };
 }
