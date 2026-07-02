@@ -1,12 +1,17 @@
 /**
  * Thumbnail engine: grab the clip's loudest frame (shock face / action peak correlates with
- * audio energy), pop contrast/saturation, and stamp large bordered MrBeast-style text.
- * No usable system font → plain frame (never fails the clip).
+ * audio energy) and render a MrBeast-style card via the Remotion ThumbCard still — face-punched
+ * zoom, vignette, huge stroked title text. Falls back to the plain grabbed frame if the
+ * Remotion still fails (never fails the clip). ffmpeg drawtext is NOT used (many builds lack it).
  */
-import { stat } from 'node:fs/promises';
+import { copyFile, mkdir, rm } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { run } from '../utils/cmd.js';
 import { logger } from '../utils/logger.js';
 import type { RmsPoint } from '../types/index.js';
+
+const REMOTION_DIR = resolve('remotion');
 
 /** PURE: loudest RMS time within [start+0.5, end-0.5]; midpoint fallback. Absolute source secs. */
 export function pickThumbnailTime(clip: { start: number; end: number }, rms: RmsPoint[]): number {
@@ -15,58 +20,45 @@ export function pickThumbnailTime(clip: { start: number; end: number }, rms: Rms
   return usable.reduce((best, p) => (p.rms > best.rms ? p : best)).time;
 }
 
-/** PURE: escape \ ' : % for an ffmpeg drawtext value. */
-export function escapeDrawtext(s: string): string {
-  return s.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/:/g, '\\:').replace(/%/g, '\\%');
+/** PURE: ffmpeg args — seek, grab 1 clean frame with a contrast/saturation pop. */
+export function buildThumbnailArgs(videoPath: string, timeSec: number, outPath: string): string[] {
+  return [
+    '-ss', String(timeSec), '-i', videoPath, '-frames:v', '1',
+    '-vf', 'scale=1280:-2,eq=contrast=1.12:saturation=1.35', '-y', outPath,
+  ];
 }
 
-/** PURE: ffmpeg args — seek, grab 1 frame, contrast/saturation pop, optional drawtext. */
-export function buildThumbnailArgs(
-  videoPath: string, timeSec: number, outPath: string, text?: string, fontFile?: string,
-): string[] {
-  const filters = ['scale=1280:-2', 'eq=contrast=1.12:saturation=1.35'];
-  if (text && fontFile) {
-    filters.push(
-      `drawtext=fontfile=${fontFile}:text='${escapeDrawtext(text)}':fontcolor=white:fontsize=110` +
-      `:borderw=10:bordercolor=black:x=(w-text_w)/2:y=h*0.07`,
-    );
-  }
-  return ['-ss', String(timeSec), '-i', videoPath, '-frames:v', '1', '-vf', filters.join(','), '-y', outPath];
-}
+/**
+ * Grab + stamp the thumbnail. timeSec is relative to videoPath (the clip extract).
+ * `face` is the zoom focus, normalized 0-1 in the frame (defaults to center).
+ */
+export async function generateThumbnail(
+  videoPath: string, timeSec: number, text: string, outPath: string,
+  opts: { accent?: string; face?: { x: number; y: number } } = {},
+): Promise<void> {
+  // 1. Plain frame grab (no drawtext — works on every ffmpeg build).
+  const inputDir = join(REMOTION_DIR, 'public', 'thumb_input');
+  await mkdir(inputDir, { recursive: true });
+  const frameName = `frame_${randomUUID().slice(0, 8)}.png`;
+  const framePath = join(inputDir, frameName);
+  await run('ffmpeg', buildThumbnailArgs(videoPath, timeSec, framePath));
 
-const FONT_CANDIDATES = [
-  '/System/Library/Fonts/Supplemental/Impact.ttf',
-  '/System/Library/Fonts/Supplemental/Arial Black.ttf',
-  '/Library/Fonts/Impact.ttf',
-  '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
-  '/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf',
-  'C:\\Windows\\Fonts\\impact.ttf',
-];
-
-let cachedFont: string | null | undefined;
-export async function findThumbnailFont(): Promise<string | null> {
-  if (cachedFont !== undefined) return cachedFont;
-  for (const f of FONT_CANDIDATES) {
-    try {
-      await stat(f);
-      cachedFont = f;
-      return f;
-    } catch { /* try next candidate */ }
-  }
-  cachedFont = null;
-  logger.warn('thumbnail: no bold system font found — rendering plain frames (no text overlay)');
-  return null;
-}
-
-/** Grab + stamp the thumbnail. timeSec is relative to videoPath (the clip extract). */
-export async function generateThumbnail(videoPath: string, timeSec: number, text: string, outPath: string): Promise<void> {
-  const font = await findThumbnailFont();
+  // 2. Remotion still: MrBeast-style card. Fallback = the plain frame itself.
   try {
-    await run('ffmpeg', buildThumbnailArgs(videoPath, timeSec, outPath, text || undefined, font ?? undefined));
+    const props = {
+      framePath: join('thumb_input', frameName),
+      text: text || 'WAIT FOR IT',
+      accent: opts.accent ?? '#FFD700',
+      ...(opts.face ? { faceX: opts.face.x, faceY: opts.face.y } : {}),
+    };
+    await run('npx', [
+      'remotion', 'still', 'src/index.ts', 'ThumbCard', resolve(outPath),
+      `--props=${JSON.stringify(props)}`,
+    ], { cwd: REMOTION_DIR, stallMs: 120_000 });
   } catch (e) {
-    // Some ffmpeg builds ship without drawtext (no libfreetype) — fall back to a plain frame.
-    if (!(text && font)) throw e;
-    logger.warn('thumbnail: text overlay failed (ffmpeg without drawtext?) — writing plain frame');
-    await run('ffmpeg', buildThumbnailArgs(videoPath, timeSec, outPath));
+    logger.warn(`thumbnail: Remotion still failed (${e instanceof Error ? e.message.slice(0, 120) : e}) — using plain frame`);
+    await copyFile(framePath, outPath);
+  } finally {
+    await rm(framePath, { force: true });
   }
 }
