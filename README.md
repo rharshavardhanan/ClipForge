@@ -133,6 +133,34 @@ The GUI shells out to the same CLI (`dist/cli/index.js`), so behavior is identic
 
 ---
 
+## Publish to YouTube
+
+One-time setup (~5 min, free):
+
+1. [console.cloud.google.com](https://console.cloud.google.com) → create a project → **APIs & Services → Library** → enable **YouTube Data API v3**.
+2. **APIs & Services → OAuth consent screen** → External → add your Gmail under **Test users**.
+3. **APIs & Services → Credentials → Create credentials → OAuth client ID** → Application type **Desktop app** → copy the client ID + secret into `.env` (`YT_CLIENT_ID`, `YT_CLIENT_SECRET`).
+4. `node dist/cli/index.js auth youtube` — your browser opens, log into the Gmail that owns the channel, click Allow.
+
+Then upload any export — title, description, tags, and thumbnail come from the clip's SEO pack; "not made for kids" is declared; privacy defaults to public:
+
+```bash
+node dist/cli/index.js upload workspace/exports/<id>                     # all clips
+node dist/cli/index.js upload workspace/exports/<id> --clips clip_001    # one clip
+node dist/cli/index.js upload workspace/exports/<id> --dry-run           # preview metadata only
+node dist/cli/index.js upload workspace/exports/<id> --privacy unlisted
+```
+
+Or in the GUI: **Clips tab → ▶ YouTube** on any clip → review the prefilled title/description → Upload.
+
+Already-uploaded clips are skipped on re-runs (`--force` to re-upload); each clip's watch URL is recorded in its `.json`.
+
+**Caveats:** until your Google Cloud app is published + verified (one-time audit), YouTube locks API uploads to **private** — ClipForge detects this and prints the Studio link to publish manually. The default API quota allows **~6 uploads/day** (resets midnight Pacific).
+
+**Instagram Reels:** Meta's API requires a business account and a publicly hosted video URL, so ClipForge keeps it manual-but-instant: click **IG caption** on a clip (copies description + hashtags), drag `clip_NNN_final.mp4` into Instagram, paste.
+
+---
+
 ## Output Files
 
 All outputs land in `workspace/exports/<jobId>/` (batches: `workspace/exports/batch_<hash>/`):
