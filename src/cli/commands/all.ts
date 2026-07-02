@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { basename, join } from 'node:path';
-import { copyFile, mkdir, rename } from 'node:fs/promises';
+import { copyFile, mkdir, rename, rm, stat, readdir } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import ora from 'ora';
 import Table from 'cli-table3';
@@ -64,6 +64,35 @@ export interface AllOpts {
   musicDir?: string;
   /** Punch zooms on emphasized moments. Default true. */
   zooms?: boolean;
+  /** Delete the downloaded source video + clip intermediates after a successful export (frees disk). */
+  deleteSource?: boolean;
+}
+
+/** PURE: files/dirs to remove when --delete-source is set — the big source download and the
+ *  per-clip intermediate extracts, one set per distinct source video. */
+export function cleanupTargets(analyses: { jobId: string; videoPath: string }[], wsDir: string): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const a of analyses) {
+    if (seen.has(a.jobId)) continue;
+    seen.add(a.jobId);
+    out.push(a.videoPath);              // the downloaded source (multi-GB for long videos)
+    out.push(join(wsDir, 'clips', a.jobId)); // full-frame intermediate extracts
+  }
+  return out;
+}
+
+async function pathSizeBytes(p: string): Promise<number> {
+  try {
+    const s = await stat(p);
+    if (s.isFile()) return s.size;
+    if (s.isDirectory()) {
+      let total = 0;
+      for (const f of await readdir(p)) total += await pathSizeBytes(join(p, f));
+      return total;
+    }
+  } catch { /* missing — nothing to free */ }
+  return 0;
 }
 
 /** PURE: coerce a preset name onto the legacy Remotion style prop (unknown → bold). */
@@ -245,6 +274,17 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
     table.push(row);
   });
   logger.info('\n' + table.toString());
+
+  // Free the big source download(s) + intermediates once clips are safely exported.
+  if (opts.deleteSource) {
+    let freed = 0;
+    for (const p of cleanupTargets(analyses, WS)) {
+      freed += await pathSizeBytes(p);
+      await rm(p, { recursive: true, force: true });
+    }
+    logger.info(`Deleted source video + intermediates — freed ~${(freed / 1e6).toFixed(0)} MB`);
+  }
+
   logger.info(`Export complete → ${exportsDir}`);
   return exportsDir;
 }

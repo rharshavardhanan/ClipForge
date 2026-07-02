@@ -27,6 +27,7 @@ export async function POST(req: NextRequest) {
   if (typeof body.captionColor === 'string' && /^#[0-9a-fA-F]{6}$/.test(body.captionColor)) args.push('--caption-color', body.captionColor);
   if (body.music === false) args.push('--no-music');
   if (body.zooms === false) args.push('--no-zooms');
+  if (body.deleteSource === true) args.push('--delete-source');
   if (body.ranking === true && inputs.length > 1) args.push('--ranking');
 
   const run = startRun(args);

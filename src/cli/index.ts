@@ -34,7 +34,8 @@ function addRenderOptions(cmd: Command): Command {
     .option('--no-music', 'disable background music')
     .option('--music-volume <v>', 'music bed level 0-1 before ducking', (v) => parseFloat(v), 0.25)
     .option('--music-dir <p>', 'music library folder', process.env.MUSIC_DIR ?? './music')
-    .option('--no-zooms', 'disable punch zooms on emphasized moments');
+    .option('--no-zooms', 'disable punch zooms on emphasized moments')
+    .option('--delete-source', 'delete the downloaded source video + intermediates after export (frees disk)');
 }
 
 /** Common option object for runAll/runBatch from parsed flags. */
@@ -42,6 +43,7 @@ function renderOpts(o: any) {
   return {
     top: o.top, minScore: o.minScore, style: o.style, accent: o.accent, caption: captionFromFlags(o),
     music: o.music, musicVolume: o.musicVolume, musicDir: o.musicDir, zooms: o.zooms,
+    deleteSource: o.deleteSource,
   };
 }
 
