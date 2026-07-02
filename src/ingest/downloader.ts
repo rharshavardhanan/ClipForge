@@ -20,7 +20,10 @@ export function buildYtdlpArgs(url: string, outDir: string): string[] {
     // Top comments feed the viewer-flagged-moment signal (commentSignals). Cap at 100
     // top-sorted top-level comments (no replies) to keep the fetch fast.
     '--write-comments', '--extractor-args', 'youtube:comment_sort=top;max_comments=100,all,0',
-    '--retries', '5', '--fragment-retries', '5',
+    // Parallel fragment downloads — YouTube throttles single connections hard, so pulling
+    // several DASH fragments at once is typically 3-5x faster on large/long videos.
+    '--concurrent-fragments', '5',
+    '--retries', '10', '--fragment-retries', '10',
     '--newline', '-o', join(outDir, 'video.%(ext)s'),
   ];
 }

@@ -30,4 +30,9 @@ describe('downloader pure helpers', () => {
     expect(j).toContain('--write-comments');
     expect(j).toContain('--extractor-args youtube:comment_sort=top;max_comments=100,all,0');
   });
+
+  it('downloads fragments in parallel to beat YouTube per-connection throttling', () => {
+    const j = buildYtdlpArgs('URL', '/out').join(' ');
+    expect(j).toContain('--concurrent-fragments 5');
+  });
 });
