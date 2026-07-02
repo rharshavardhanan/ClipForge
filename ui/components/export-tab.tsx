@@ -48,7 +48,7 @@ export function ExportTab({ jobs, onChanged }: { jobs: ExportJob[]; onChanged: (
       </div>
       <table className="w-full text-left text-sm">
         <thead>
-          <tr className="border-b border-zinc-800 text-xs uppercase tracking-wider text-zinc-500">
+          <tr className="border-b border-line text-xs uppercase tracking-wider text-zinc-500">
             <th className="py-2 pr-4">Job</th>
             <th className="py-2 pr-4">Files</th>
             <th className="py-2 pr-4">Path</th>
@@ -59,7 +59,7 @@ export function ExportTab({ jobs, onChanged }: { jobs: ExportJob[]; onChanged: (
           {jobs.map((job) => {
             const path = `workspace/exports/${job.id}`;
             return (
-              <tr key={job.id} className="border-b border-zinc-900 align-top">
+              <tr key={job.id} className="border-b border-line align-top">
                 <td className="py-3 pr-4">
                   <div className="font-semibold">{job.title}</div>
                   <div className="text-xs text-zinc-500">{job.processedAt}</div>
@@ -67,14 +67,14 @@ export function ExportTab({ jobs, onChanged }: { jobs: ExportJob[]; onChanged: (
                 <td className="py-3 pr-4">
                   <div className="flex flex-wrap gap-1.5">
                     <Badge>{job.clipCount}× final.mp4</Badge>
-                    <Badge tone="amber">{formatBytes(job.sizeBytes)}</Badge>
+                    <Badge tone="gold">{formatBytes(job.sizeBytes)}</Badge>
                     {job.hasRanking && <Badge tone="green">ranking_final.mp4</Badge>}
                   </div>
                 </td>
                 <td className="py-3 pr-4">
                   <button
                     onClick={() => copy(path)}
-                    className="rounded bg-zinc-900 px-2 py-1 font-mono text-xs text-zinc-300 hover:bg-zinc-800"
+                    className="rounded bg-ink-800 px-2 py-1 font-mono text-xs text-zinc-300 hover:bg-zinc-800"
                     title="Copy path"
                   >
                     {copied === path ? 'copied!' : path}

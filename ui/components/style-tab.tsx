@@ -65,10 +65,10 @@ export function StyleTab({ style, onChange }: { style: StyleConfig; onChange: (s
               <button
                 key={p}
                 onClick={() => onChange({ ...style, preset: p })}
-                className={`flex h-28 flex-col items-center justify-center gap-2 rounded-xl border bg-gradient-to-b from-zinc-800 to-zinc-950 transition-colors ${active ? 'border-amber-400' : 'border-zinc-800 hover:border-zinc-600'}`}
+                className={`flex h-28 flex-col items-center justify-center gap-2 rounded-xl border bg-gradient-to-b from-ink-700 to-ink-900 transition-colors ${active ? 'border-gold' : 'border-line hover:border-zinc-600'}`}
               >
                 <span style={css}>{sample}</span>
-                <span className={`text-xs font-semibold uppercase tracking-widest ${active ? 'text-amber-300' : 'text-zinc-500'}`}>{p}</span>
+                <span className={`text-xs font-semibold uppercase tracking-widest ${active ? 'text-gold' : 'text-zinc-500'}`}>{p}</span>
               </button>
             );
           })}
@@ -110,7 +110,7 @@ export function StyleTab({ style, onChange }: { style: StyleConfig; onChange: (s
                 type="color"
                 value={style.captionColor || '#FFFFFF'}
                 onChange={(e) => onChange({ ...style, captionColor: e.target.value })}
-                className="h-10 w-14 cursor-pointer rounded-lg border border-zinc-700 bg-zinc-900"
+                className="h-10 w-14 cursor-pointer rounded-lg border border-line bg-ink-800"
               />
               {style.captionColor && (
                 <button className="text-xs text-zinc-500 hover:text-zinc-300" onClick={() => onChange({ ...style, captionColor: '' })}>
@@ -130,7 +130,7 @@ export function StyleTab({ style, onChange }: { style: StyleConfig; onChange: (s
               type="color"
               value={style.accent}
               onChange={(e) => onChange({ ...style, accent: e.target.value })}
-              className="h-10 w-full cursor-pointer rounded-lg border border-zinc-700 bg-zinc-900"
+              className="h-10 w-full cursor-pointer rounded-lg border border-line bg-ink-800"
             />
           </Field>
           <Field label="Background music">

@@ -2,17 +2,44 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  color-scheme: dark;
+}
+
 body {
-  @apply bg-zinc-950 text-zinc-100 antialiased;
+  @apply text-zinc-200 font-sans antialiased;
+  /* Layered radial washes over warm black — subtle depth, no flat void. */
+  background:
+    radial-gradient(1100px 560px at 100% -12%, rgba(245, 197, 24, 0.07), transparent 60%),
+    radial-gradient(820px 460px at -10% 112%, rgba(96, 120, 255, 0.045), transparent 60%),
+    #0a0a0c;
+  background-attachment: fixed;
 }
 
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 11px;
+  height: 11px;
 }
 ::-webkit-scrollbar-thumb {
-  @apply rounded-full bg-zinc-700;
+  background: #2b2b33;
+  border-radius: 9999px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
 }
-::-webkit-scrollbar-track {
-  @apply bg-transparent;
+::-webkit-scrollbar-thumb:hover {
+  background: #3a3a44;
+  background-clip: padding-box;
+}
+
+/* Thin gold top-accent line used on primary panels. */
+.accent-top {
+  position: relative;
+}
+.accent-top::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 2px;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, transparent, rgba(245, 197, 24, 0.7), transparent);
 }
