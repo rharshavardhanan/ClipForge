@@ -82,6 +82,9 @@ node dist/cli/index.js ui        # → http://localhost:3210
 --music-volume <v>     music level 0-1 before ducking  (default: 0.25)
 --music-dir <p>        music library folder            (default: ./music)
 --no-zooms             disable punch zooms on emphasized moments
+--no-sfx               disable sound-design SFX (whoosh on zooms, impact under hook)
+--sfx-volume <v>       SFX one-shot level 0-1          (default: 0.6)
+--sfx-dir <p>          SFX library folder              (default: ./sfx)
 ```
 
 `batch` adds `--per-video-cap <n>` (stop one video monopolizing the leaderboard) and `--ranking` (render the countdown video after export). `rank` takes `--accent` and `--card-seconds`.
@@ -101,6 +104,18 @@ music/
 ```
 
 Moods: `intense · funny · motivational · suspense · emotional · chill`. Each clip's Gemini sentiment picks the mood (funny→funny, intense→intense, serious→motivational, neutral→chill); the bed is looped/trimmed, faded, and **sidechain-ducked under speech**. No matching track → the clip ships without music.
+
+## SFX library
+
+Same convention for sound-design one-shots in `./sfx` — kinds: `whoosh · impact · pop · riser · bass`:
+
+```
+sfx/
+  whoosh/swish.mp3           # played on each punch-zoom moment
+  impact_boom.wav            # played under the hook card
+```
+
+A **whoosh** fires on every punch-zoom event (same timing as the visual zoom) and an **impact** lands under the hook card. Picks are deterministic per clip; an empty `./sfx` folder skips SFX silently.
 
 ---
 
@@ -124,12 +139,21 @@ All outputs land in `workspace/exports/<jobId>/` (batches: `workspace/exports/ba
 
 | File | Description |
 |------|-------------|
-| `clip_NNN_final.mp4` | 9:16 (1080×1920) final — reframed, captioned, music bed, punch zooms |
+| `clip_NNN_final.mp4` | 9:16 (1080×1920) final — reframed, captioned, SFX, music bed, punch zooms |
 | `clip_NNN_raw.mp4` | Raw extract before reframe/captions |
 | `clip_NNN.srt` | Word-level SRT subtitle file |
-| `clip_NNN.json` | Per-clip metadata: layer scores, timing, transcript excerpt |
+| `clip_NNN.json` | Per-clip metadata: layer scores, timing, transcript excerpt, SEO pack |
+| `clip_NNN_thumbnail.png` | Loudest-frame thumbnail with bold bordered title text |
+| `clip_NNN_title.txt` | Click-optimized title + creator/#shorts tags |
+| `clip_NNN_description.txt` | SEO description: hook line, source credit, hashtag block |
+| `clip_NNN_hashtags.txt` | Full hashtag set (creator + viral + sentiment + niche), one per line |
+| `clip_NNN_hook.txt` | Uppercase hook text (matches the burned-in hook card) |
 | `clips_manifest.json` | Job-level summary (batches record each clip's source video) |
 | `ranking_final.mp4` | #N→#1 countdown video (`--ranking` or `rank` command) |
+| `ranking_titles.txt` | Countdown title options + per-rank lines |
+| `ranking_description.txt` | Ranking video SEO description + hashtags |
+
+Clip length is adaptive: sentence-snapped 15–30s by default, extending toward 60s only while the surrounding moments hold peak-level heat (setup/payoff never cut mid-arc).
 
 ---
 
@@ -189,7 +213,7 @@ Render (Remotion) ── 9:16 reframe + preset captions + hook card
 Music ── mood-matched bed, looped/faded, sidechain-ducked under speech
     │
     ▼
-Exports ── clips + srt + json + manifest   (+ ranking_final.mp4 countdown)
+Exports ── clips + srt + json + thumbnail + SEO texts + manifest   (+ ranking_final.mp4 countdown + ranking texts)
 ```
 
 ---
