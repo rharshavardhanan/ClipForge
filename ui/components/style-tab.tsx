@@ -1,17 +1,26 @@
 'use client';
 
-import { Card, Field, inputCls } from './ui';
+import { Card, Field, Stepper, inputCls } from './ui';
 
 export interface StyleConfig {
   preset: string;
   accent: string;
   music: boolean;
   zooms: boolean;
+  /** Caption overrides — empty string / 0 / -1 mean "use the preset's value". */
+  font: string;
+  fontSize: number;
+  position: string;
+  stroke: number;
+  captionColor: string;
 }
 
 export const DEFAULT_STYLE_CONFIG: StyleConfig = {
   preset: 'bold', accent: '#FFD700', music: true, zooms: true,
+  font: '', fontSize: 0, position: '', stroke: -1, captionColor: '',
 };
+
+const FONTS = ['anton', 'bangers', 'archivo', 'montserrat', 'poppins', 'inter'] as const;
 
 export const PRESETS = ['mrbeast', 'hormozi', 'gadzhi', 'gaming', 'podcast', 'cinematic', 'minimal', 'card', 'bold'] as const;
 
@@ -32,6 +41,11 @@ export function StyleTab({ style, onChange }: { style: StyleConfig; onChange: (s
   const cliFlags = [
     `--style ${style.preset}`,
     style.accent !== '#FFD700' ? `--accent "${style.accent}"` : '',
+    style.font ? `--font ${style.font}` : '',
+    style.fontSize > 0 ? `--font-size ${style.fontSize}` : '',
+    style.position ? `--position ${style.position}` : '',
+    style.stroke >= 0 ? `--stroke ${style.stroke}` : '',
+    style.captionColor ? `--caption-color "${style.captionColor}"` : '',
     !style.music ? '--no-music' : '',
     !style.zooms ? '--no-zooms' : '',
   ].filter(Boolean).join(' ');
@@ -62,6 +76,53 @@ export function StyleTab({ style, onChange }: { style: StyleConfig; onChange: (s
       </Card>
 
       <Card>
+        <h2 className="mb-1 text-lg font-bold">Caption fine-tuning</h2>
+        <p className="mb-4 text-sm text-zinc-500">Each control defaults to the preset&apos;s value — override only what you want to change.</p>
+        <div className="grid max-w-3xl grid-cols-2 gap-4 sm:grid-cols-4">
+          <Field label="Font">
+            <select className={inputCls} value={style.font} onChange={(e) => onChange({ ...style, font: e.target.value })}>
+              <option value="">Preset font</option>
+              {FONTS.map((f) => <option key={f} value={f}>{f}</option>)}
+            </select>
+          </Field>
+          <Field label="Font size">
+            <select className={inputCls} value={String(style.fontSize)} onChange={(e) => onChange({ ...style, fontSize: parseInt(e.target.value, 10) })}>
+              <option value="0">Preset size</option>
+              {[44, 52, 60, 70, 80, 92].map((s) => <option key={s} value={s}>{s}px</option>)}
+            </select>
+          </Field>
+          <Field label="Position">
+            <select className={inputCls} value={style.position} onChange={(e) => onChange({ ...style, position: e.target.value })}>
+              <option value="">Preset position</option>
+              <option value="bottom">Bottom</option>
+              <option value="center">Center</option>
+            </select>
+          </Field>
+          <Field label="Stroke width">
+            <select className={inputCls} value={String(style.stroke)} onChange={(e) => onChange({ ...style, stroke: parseInt(e.target.value, 10) })}>
+              <option value="-1">Preset stroke</option>
+              {[0, 3, 6, 10, 14].map((s) => <option key={s} value={s}>{s}px</option>)}
+            </select>
+          </Field>
+          <Field label="Caption color">
+            <div className="flex items-center gap-2">
+              <input
+                type="color"
+                value={style.captionColor || '#FFFFFF'}
+                onChange={(e) => onChange({ ...style, captionColor: e.target.value })}
+                className="h-10 w-14 cursor-pointer rounded-lg border border-zinc-700 bg-zinc-900"
+              />
+              {style.captionColor && (
+                <button className="text-xs text-zinc-500 hover:text-zinc-300" onClick={() => onChange({ ...style, captionColor: '' })}>
+                  reset
+                </button>
+              )}
+            </div>
+          </Field>
+        </div>
+      </Card>
+
+      <Card>
         <h2 className="mb-4 text-lg font-bold">Options</h2>
         <div className="grid max-w-xl grid-cols-1 gap-4 sm:grid-cols-3">
           <Field label="Accent color">
@@ -85,7 +146,13 @@ export function StyleTab({ style, onChange }: { style: StyleConfig; onChange: (s
             </select>
           </Field>
         </div>
-        <p className="mt-4 font-mono text-xs text-zinc-500">CLI equivalent: {cliFlags}</p>
+        <p className="mt-4 text-xs text-zinc-500">
+          Background music comes from the <span className="font-mono text-zinc-400">./music</span> folder in the project root, organized by mood:
+          <span className="font-mono text-zinc-400"> music/intense/ funny/ motivational/ suspense/ emotional/ chill/</span> (or prefix files like
+          <span className="font-mono text-zinc-400"> funny_kazoo.mp3</span>). Drop royalty-free tracks in and each clip picks one matching its sentiment,
+          ducked under speech automatically. No matching track → no music.
+        </p>
+        <p className="mt-3 font-mono text-xs text-zinc-500">CLI equivalent: {cliFlags}</p>
       </Card>
     </div>
   );
