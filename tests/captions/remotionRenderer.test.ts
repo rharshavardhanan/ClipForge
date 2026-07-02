@@ -59,6 +59,11 @@ describe('buildProps', () => {
     expect(without.caption).toBeUndefined();
   });
 
+  it('enables punch zooms by default and disables on zooms:false', () => {
+    expect(buildProps(baseOpts, 10, 'input/x.mp4').zooms).toBe(true);
+    expect(buildProps({ ...baseOpts, zooms: false }, 10, 'input/x.mp4').zooms).toBe(false);
+  });
+
   it('carries cropTrack/srcW/srcH through when provided', () => {
     const props = buildProps(
       { ...baseOpts, cropTrack: [{ time: 0, cx: 1, cy: 2, cropW: 3, cropH: 4 }], srcW: 1920, srcH: 1080 },
