@@ -28,9 +28,12 @@ NODE_MAJOR=$(node -p 'process.versions.node.split(".")[0]')
 [ "$NODE_MAJOR" -ge 20 ] || fail "Node $NODE_MAJOR is too old — need Node 20+ (nvm use 24)"
 
 # ---------- 2. Dependencies (root, remotion renderer, GUI) ----------
-[ -d node_modules ]          || { say "Installing root dependencies…";     npm install; }
-[ -d remotion/node_modules ] || { say "Installing Remotion renderer…";     (cd remotion && npm install); }
-[ -d ui/node_modules ]       || { say "Installing GUI…";                   (cd ui && npm install); }
+# Reinstall when package.json is newer than node_modules (e.g. after a git pull),
+# not just when node_modules is missing. touch marks the install as current.
+fresh_deps() { [ -d "$1/node_modules" ] && [ ! "$1/package.json" -nt "$1/node_modules" ]; }
+fresh_deps .        || { say "Installing root dependencies…"; npm install && touch node_modules; }
+fresh_deps remotion || { say "Installing Remotion renderer…"; (cd remotion && npm install && touch node_modules); }
+fresh_deps ui       || { say "Installing GUI…";               (cd ui && npm install && touch node_modules); }
 
 # ---------- 3. .env ----------
 if [ ! -f .env ]; then
@@ -39,8 +42,10 @@ if [ ! -f .env ]; then
   echo "  ${dim}Add ANTHROPIC_API_KEY (primary scoring) and/or GEMINI_API_KEY (fallback) to .env${reset}"
 fi
 
-# ---------- 4. Build (only when src is newer than dist) ----------
-if [ ! -f dist/cli/index.js ] || [ -n "$(find src -name '*.ts' -newer dist/cli/index.js 2>/dev/null | head -1)" ]; then
+# ---------- 4. Build (whenever any src file or tsconfig is newer than the last build) ----------
+if [ ! -f dist/cli/index.js ] \
+   || [ tsconfig.json -nt dist/cli/index.js ] \
+   || [ -n "$(find src -name '*.ts' -newer dist/cli/index.js 2>/dev/null | head -1)" ]; then
   say "Building TypeScript…"
   npm run build
 fi
