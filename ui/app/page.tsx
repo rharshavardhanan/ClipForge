@@ -1,7 +1,7 @@
 'use client';
 
 import * as Tabs from '@radix-ui/react-tabs';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ExportJob } from '@/lib/workspace';
 import { Icon } from '@/components/icons';
 import { ImportTab } from '@/components/import-tab';
@@ -47,6 +47,14 @@ export default function Home() {
     refreshJobs();
     fetch('/api/status').then((r) => r.json()).then((d) => setProvider(d.provider)).catch(() => {});
   }, [refreshJobs]);
+
+  // Newest export's first clip (RAW — no burned captions) plays behind the Style-tab caption preview.
+  const previewSrc = useMemo(() => {
+    const withClips = jobs.find((j) => j.clips.length > 0);
+    if (!withClips) return null;
+    const c = withClips.clips[0];
+    return `/api/video?job=${encodeURIComponent(withClips.id)}&file=${encodeURIComponent(c.files.raw)}`;
+  }, [jobs]);
 
   const totalBytes = jobs.reduce((a, j) => a + j.sizeBytes, 0);
   const active = NAV.find((n) => n.id === tab) ?? NAV[0];
@@ -108,7 +116,7 @@ export default function Home() {
           {/* forceMount keeps tabs mounted so in-progress state (pasted URLs, live logs) survives switching. */}
           <Tabs.Content value="Import" forceMount className="animate-fade-up outline-none data-[state=inactive]:hidden"><ImportTab style={style} onFinished={refreshJobs} /></Tabs.Content>
           <Tabs.Content value="Clips" forceMount className="animate-fade-up outline-none data-[state=inactive]:hidden"><ClipsTab jobs={jobs} onRefresh={refreshJobs} /></Tabs.Content>
-          <Tabs.Content value="Style" forceMount className="animate-fade-up outline-none data-[state=inactive]:hidden"><StyleTab style={style} onChange={setStyle} /></Tabs.Content>
+          <Tabs.Content value="Style" forceMount className="animate-fade-up outline-none data-[state=inactive]:hidden"><StyleTab style={style} onChange={setStyle} previewSrc={previewSrc} /></Tabs.Content>
           <Tabs.Content value="Rank" forceMount className="animate-fade-up outline-none data-[state=inactive]:hidden"><RankTab jobs={jobs} accent={style.accent} onFinished={refreshJobs} /></Tabs.Content>
           <Tabs.Content value="Export" forceMount className="animate-fade-up outline-none data-[state=inactive]:hidden"><ExportTab jobs={jobs} onChanged={refreshJobs} /></Tabs.Content>
         </main>
