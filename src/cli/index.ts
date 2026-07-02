@@ -9,23 +9,16 @@ import { runIngest } from './commands/ingest.js';
 import { runRankingRender } from './commands/rank.js';
 import { runAuthYoutube, runUpload } from './commands/publish.js';
 import { runUi } from './commands/ui.js';
-import { resolveCaptionStyle } from '../captions/presets.js';
 import { isLocalInput } from '../ingest/localFile.js';
 import { logger } from '../utils/logger.js';
 
-const STYLE_HELP = 'caption preset: mrbeast|hormozi|gadzhi|gaming|podcast|cinematic|minimal|card|bold';
-
-/** Shared caption-style flags → resolved CaptionStyle. */
-function captionFromFlags(o: { style: string; font?: string; fontSize?: number; captionColor?: string; stroke?: number; position?: string }) {
-  return resolveCaptionStyle(o.style, {
-    font: o.font, fontSize: o.fontSize, color: o.captionColor, strokeWidth: o.stroke, position: o.position,
-  });
-}
+const STYLE_HELP = 'caption preset: mrbeast|hormozi|gadzhi|gaming|podcast|cinematic|minimal|card|bold (default: the mode\'s preset)';
 
 /** Render-affecting flags shared by all/batch/process. */
 function addRenderOptions(cmd: Command): Command {
   return cmd
-    .option('--style <s>', STYLE_HELP, 'bold')
+    .option('--mode <m>', 'content mode: auto|clippies|mindcuts (auto = detect per video)', 'auto')
+    .option('--style <s>', STYLE_HELP)
     .option('--accent <hex>', 'accent color', '#FFD700')
     .option('--font <name>', 'caption font override: anton|bangers|archivo|montserrat|poppins|inter')
     .option('--font-size <px>', 'caption font size override', (v) => parseInt(v, 10))
@@ -35,6 +28,10 @@ function addRenderOptions(cmd: Command): Command {
     .option('--no-music', 'disable background music')
     .option('--music-volume <v>', 'music bed level 0-1 before ducking', (v) => parseFloat(v), 0.25)
     .option('--music-dir <p>', 'music library folder', process.env.MUSIC_DIR ?? './music')
+    .option('--broll', 'force contextual B-roll (narrative overlay) on for every clip')
+    .option('--no-broll', 'disable contextual B-roll (default: on for mindcuts only)')
+    .option('--broll-dir <p>', 'B-roll cache folder', process.env.BROLL_DIR ?? './broll_cache')
+    .option('--max-broll <n>', 'max B-roll overlays per clip (default: mode-dependent)', (v) => parseInt(v, 10))
     .option('--no-zooms', 'disable punch zooms on emphasized moments')
     .option('--no-sfx', 'disable sound-design SFX (whoosh on zooms, impact under hook)')
     .option('--sfx-volume <v>', 'SFX one-shot level 0-1', (v) => parseFloat(v), 0.6)
@@ -45,8 +42,16 @@ function addRenderOptions(cmd: Command): Command {
 
 /** Common option object for runAll/runBatch from parsed flags. */
 function renderOpts(o: any) {
+  if (o.mode && !['auto', 'clippies', 'mindcuts'].includes(o.mode)) {
+    logger.error(`--mode must be auto|clippies|mindcuts (got "${o.mode}")`);
+    process.exit(1);
+  }
   return {
-    top: o.top, minScore: o.minScore, style: o.style, accent: o.accent, caption: captionFromFlags(o),
+    top: o.top, minScore: o.minScore, style: o.style, accent: o.accent,
+    // Caption style resolves inside the pipeline (explicit --style wins, else the mode preset);
+    // the fine-tuning flags ride along as overrides.
+    captionOverrides: { font: o.font, fontSize: o.fontSize, color: o.captionColor, strokeWidth: o.stroke, position: o.position },
+    mode: o.mode, broll: o.broll, brollDir: o.brollDir, maxBroll: o.maxBroll,
     music: o.music, musicVolume: o.musicVolume, musicDir: o.musicDir, zooms: o.zooms,
     sfx: o.sfx, sfxVolume: o.sfxVolume, sfxDir: o.sfxDir,
     deleteSource: o.deleteSource, allowRepeats: o.allowRepeats,

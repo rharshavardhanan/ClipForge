@@ -14,6 +14,10 @@ export async function POST(req: NextRequest) {
   const args: string[] = inputs.length > 1 ? ['batch', ...inputs] : [inputs[0].endsWith('.mp4') || inputs[0].endsWith('.mov') || inputs[0].endsWith('.mkv') || inputs[0].endsWith('.webm') ? 'process' : 'all', inputs[0]];
   const top = Number(body.top);
   if (Number.isFinite(top) && top > 0) args.push('--top', String(Math.min(20, Math.round(top))));
+  // v6 content mode + contextual B-roll (tri-state: on / off / mode default)
+  if (body.mode === 'clippies' || body.mode === 'mindcuts') args.push('--mode', body.mode);
+  if (body.broll === true) args.push('--broll');
+  if (body.broll === false) args.push('--no-broll');
   if (PRESETS.has(body.style)) args.push('--style', body.style);
   if (typeof body.accent === 'string' && /^#[0-9a-fA-F]{6}$/.test(body.accent)) args.push('--accent', body.accent);
   // caption fine-tuning overrides (empty/0/-1 = keep preset value)

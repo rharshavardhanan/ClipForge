@@ -1,4 +1,4 @@
-import type { ClipCandidate, RankedClip, SemanticWindow, TranscriptSegment, WindowScore } from '../types/index.js';
+import type { ClipCandidate, RankedClip, SemanticScores, SemanticWindow, TranscriptSegment, WindowScore } from '../types/index.js';
 
 export function defaultMinScore(windows: WindowScore[]): number {
   if (!windows.length) return 0;
@@ -39,20 +39,33 @@ function findOverlappingSemantic(
   return best;
 }
 
+/** PURE: mode-priority boost — mean of the prioritized semantic sub-scores, scaled to ≤1.5.
+ *  Reorders ranking toward the active mode's grammar without touching the reported composite. */
+export function priorityBoost(sw: SemanticWindow | null, priorities?: (keyof SemanticScores)[]): number {
+  if (!sw || !priorities || priorities.length === 0) return 0;
+  const mean = priorities.reduce((a, k) => a + (sw.scores[k] ?? 0), 0) / priorities.length;
+  return 1.5 * (mean / 10);
+}
+
 export function rank(
   candidates: ClipCandidate[],
   segments: TranscriptSegment[],
-  opts: { top: number; minScore?: number },
+  opts: { top: number; minScore?: number; priorities?: (keyof SemanticScores)[] },
   semantic: SemanticWindow[] = [],
 ): RankedClip[] {
   const min = opts.minScore ?? 0;
-  const sorted = [...candidates].filter((c) => c.composite >= min).sort((a, b) => b.composite - a.composite);
+  const scored = [...candidates]
+    .filter((c) => c.composite >= min)
+    .map((cand) => {
+      const sw = semantic.length > 0 ? findOverlappingSemantic(cand.start, cand.end, semantic) : null;
+      return { cand, sw, adjusted: cand.composite + priorityBoost(sw, opts.priorities) };
+    })
+    .sort((a, b) => b.adjusted - a.adjusted);
 
   const kept: { cand: ClipCandidate; text: string; sw: SemanticWindow | null }[] = [];
-  for (const cand of sorted) {
+  for (const { cand, sw } of scored) {
     const text = clipText(cand, segments);
     if (kept.some((k) => overlapRatio(k.text, text) > 0.4)) continue;
-    const sw = semantic.length > 0 ? findOverlappingSemantic(cand.start, cand.end, semantic) : null;
     // Drop non-standalone clips that aren't otherwise strong enough — only when semantic data exists.
     if (semantic.length > 0 && sw && sw.is_standalone === false && cand.composite < 7) continue;
     kept.push({ cand, text, sw });

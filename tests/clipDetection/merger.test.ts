@@ -114,3 +114,20 @@ describe('buildClips', () => {
     expect(clips[0].end).toBeLessThanOrEqual(25);
   });
 });
+
+describe('mode lengths (v6)', () => {
+  it('clampDuration honors custom min/max', () => {
+    expect(clampDuration(0, 200, { min: 15, soft: 25, max: 45 })).toEqual({ start: 0, end: 45 });
+    expect(clampDuration(0, 5, { min: 20, soft: 45, max: 60 })).toEqual({ start: 0, end: 20 });
+  });
+  it('buildClips caps expansion at the mode max (clippies 45s)', () => {
+    const longSegs = Array.from({ length: 30 }, (_, i) =>
+      ({ id: i, start: i * 5, end: i * 5 + 4.9, text: `s${i}`, words: [] }));
+    const windows = Array.from({ length: 20 }, (_, i) =>
+      ({ start: i * 10, end: i * 10 + 10, triggerScore: 9, audioScore: 9, composite: 9 }));
+    const audio = { rms_curve: [], silence_regions: [] };
+    const clips = buildClips(windows, longSegs, audio, 5, Infinity, { min: 15, soft: 25, max: 45 });
+    expect(clips.length).toBeGreaterThanOrEqual(1);
+    for (const c of clips) expect(c.end - c.start).toBeLessThanOrEqual(45);
+  });
+});

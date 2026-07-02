@@ -1,4 +1,5 @@
 import type { AudioEnergyLayer, ClipCandidate, SilenceRegion, TranscriptSegment, WindowScore } from '../types/index.js';
+import type { ClipLengths } from '../modes.js';
 
 export function snapStart(t: number, segments: TranscriptSegment[]): number {
   const enclosing = segments.find((s) => t >= s.start && t < s.end);
@@ -22,19 +23,21 @@ export function coldOpenTrim(start: number, silences: SilenceRegion[]): number {
 // Adaptive length (v4): most clips stay punchy under the 30s soft cap; a clip may extend
 // toward 60s ONLY while its neighboring windows hold peak-level (>= threshold) heat —
 // "if the clip needs more context, expand; never cut payoff."
+// v6 modes override the caps per video (clippies 15/25/45, mindcuts 20/45/60).
 export const MIN_CLIP_SEC = 15;
 export const SOFT_CAP_SEC = 30;
 export const MAX_CLIP_SEC = 60;
+export const DEFAULT_LENGTHS: ClipLengths = { min: MIN_CLIP_SEC, soft: SOFT_CAP_SEC, max: MAX_CLIP_SEC };
 
-function spanAllowed(span: number, composite: number, threshold: number): boolean {
-  if (span <= SOFT_CAP_SEC) return true;
-  return composite >= threshold && span <= MAX_CLIP_SEC;
+function spanAllowed(span: number, composite: number, threshold: number, lengths: ClipLengths): boolean {
+  if (span <= lengths.soft) return true;
+  return composite >= threshold && span <= lengths.max;
 }
 
-export function clampDuration(start: number, end: number): { start: number; end: number } {
+export function clampDuration(start: number, end: number, lengths: ClipLengths = DEFAULT_LENGTHS): { start: number; end: number } {
   let e = end;
-  if (e - start > MAX_CLIP_SEC) e = start + MAX_CLIP_SEC;   // hard cap
-  if (e - start < MIN_CLIP_SEC) e = start + MIN_CLIP_SEC;   // pull up very short clips
+  if (e - start > lengths.max) e = start + lengths.max;   // hard cap
+  if (e - start < lengths.min) e = start + lengths.min;   // pull up very short clips
   return { start, end: e };
 }
 
@@ -44,6 +47,7 @@ export function buildClips(
   audio: AudioEnergyLayer,
   threshold: number,
   duration = Infinity,
+  lengths: ClipLengths = DEFAULT_LENGTHS,
 ): ClipCandidate[] {
   const floor = threshold * 0.7;
   const sorted = [...windows].sort((a, b) => a.start - b.start);
@@ -59,21 +63,21 @@ export function buildClips(
     // 30s soft cap expand freely; extending toward the 60s max needs peak-level (>= threshold) heat.
     let i = pi;
     while (i - 1 >= 0 && sorted[i - 1].composite >= floor
-      && spanAllowed(end - sorted[i - 1].start, sorted[i - 1].composite, threshold)) {
+      && spanAllowed(end - sorted[i - 1].start, sorted[i - 1].composite, threshold, lengths)) {
       i--;
       start = sorted[i].start;
     }
     let j = pi;
     while (j + 1 < sorted.length && sorted[j + 1].composite >= floor
-      && spanAllowed(sorted[j + 1].end - start, sorted[j + 1].composite, threshold)) {
+      && spanAllowed(sorted[j + 1].end - start, sorted[j + 1].composite, threshold, lengths)) {
       j++;
       end = sorted[j].end;
     }
 
-    // Snap to sentence boundaries, trim a cold open, clamp to 15-60s, and cap at real duration.
+    // Snap to sentence boundaries, trim a cold open, clamp to the mode's min/max, cap at real duration.
     start = coldOpenTrim(snapStart(start, segments), audio.silence_regions);
     end = snapEnd(end, segments);
-    ({ start, end } = clampDuration(start, end));
+    ({ start, end } = clampDuration(start, end, lengths));
     end = Math.min(end, duration);
 
     // Drop candidates overlapping an already-kept clip (IOU > 0.5).

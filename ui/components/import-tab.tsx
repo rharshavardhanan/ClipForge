@@ -9,6 +9,8 @@ import type { StyleConfig } from './style-tab';
 export function ImportTab({ style, onFinished }: { style: StyleConfig; onFinished: () => void }) {
   const [inputsText, setInputsText] = useState('');
   const [top, setTop] = useState(3);
+  const [mode, setMode] = useState('auto');
+  const [broll, setBroll] = useState('auto');
   const [ranking, setRanking] = useState(false);
   const [deleteSource, setDeleteSource] = useState(false);
   const [runId, setRunId] = useState<string | null>(null);
@@ -43,7 +45,8 @@ export function ImportTab({ style, onFinished }: { style: StyleConfig; onFinishe
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          inputs, top,
+          inputs, top, mode,
+          broll: broll === 'auto' ? undefined : broll === 'on',
           style: style.preset, accent: style.accent, music: style.music, zooms: style.zooms,
           font: style.font, fontSize: style.fontSize, position: style.position,
           stroke: style.stroke, captionColor: style.captionColor,
@@ -105,6 +108,22 @@ export function ImportTab({ style, onFinished }: { style: StyleConfig; onFinishe
         <div className="flex flex-wrap items-end gap-6">
           <Field label="Max clips" hint="Best moments to export">
             <Stepper value={top} onChange={setTop} min={1} max={20} />
+          </Field>
+
+          <Field label="Mode" hint="Editing grammar per video">
+            <select value={mode} onChange={(e) => setMode(e.target.value)} className={inputCls}>
+              <option value="auto">Auto-detect</option>
+              <option value="clippies">Clippies — high-energy</option>
+              <option value="mindcuts">MindCuts — story-first</option>
+            </select>
+          </Field>
+
+          <Field label="B-roll" hint="Contextual narrative overlays">
+            <select value={broll} onChange={(e) => setBroll(e.target.value)} className={inputCls}>
+              <option value="auto">Mode default</option>
+              <option value="on">On</option>
+              <option value="off">Off</option>
+            </select>
           </Field>
 
           <label className={`flex cursor-pointer items-center gap-2.5 rounded-xl border border-line px-3.5 py-2.5 text-sm transition-colors ${inputs.length > 1 ? 'text-zinc-200 hover:border-zinc-600' : 'cursor-not-allowed text-zinc-600'}`}>

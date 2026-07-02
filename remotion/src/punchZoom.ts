@@ -26,14 +26,17 @@ export function buildZoomEvents(
   return events;
 }
 
-/** Scale of the video layer at time t: 1 → 1.08 punch envelope around each event. */
-export function punchScaleAt(events: number[], t: number): number {
+/** Scale of the video layer at time t: 1 → 1.08 punch envelope around each event.
+ *  `intensity` scales the punch amplitude (mindcuts uses ~0.55 for subtle story-first zooms);
+ *  timing is unchanged so the SFX whoosh mirror (sfx/events) stays aligned. */
+export function punchScaleAt(events: number[], t: number, intensity = 1): number {
+  const peak = 1 + (PEAK - 1) * intensity;
   for (const e of events) {
     const dt = t - e;
     if (dt < 0 || dt >= RELEASE) continue;
-    if (dt < RAMP) return 1 + (PEAK - 1) * (dt / RAMP);
-    if (dt < HOLD) return PEAK;
-    return PEAK - (PEAK - 1) * ((dt - HOLD) / (RELEASE - HOLD));
+    if (dt < RAMP) return 1 + (peak - 1) * (dt / RAMP);
+    if (dt < HOLD) return peak;
+    return peak - (peak - 1) * ((dt - HOLD) / (RELEASE - HOLD));
   }
   return 1;
 }

@@ -32,9 +32,12 @@ import { mixSfx } from '../../sfx/mixer.js';
 import { writeExports } from '../../export/exporter.js';
 import { buildSeoPack, type SeoPack } from '../../export/seo.js';
 import { pickThumbnailTime, generateThumbnail } from '../../export/thumbnail.js';
+import { MODE_PROFILES, resolveMode } from '../../modes.js';
+import { acquireBroll } from '../../broll/acquire.js';
+import { filterCallouts } from '../../broll/planner.js';
 import { logger } from '../../utils/logger.js';
-import type { RankedClip, TranscriptSegment, VideoAnalysis } from '../../types/index.js';
-import type { CaptionStyle } from '../../captions/presets.js';
+import type { BrollSegment, RankedClip, TranscriptSegment, VideoAnalysis } from '../../types/index.js';
+import { resolveCaptionStyle, type CaptionOverrides, type CaptionStyle } from '../../captions/presets.js';
 
 const WS = process.env.WORKSPACE_DIR ?? './workspace';
 
@@ -60,12 +63,22 @@ export function batchId(urls: string[]): string {
 export interface AllOpts {
   top: number;
   minScore?: number;
-  /** Caption preset name (mrbeast|hormozi|gadzhi|gaming|podcast|cinematic|minimal|card|bold). */
-  style: string;
+  /** Caption preset name (mrbeast|hormozi|gadzhi|gaming|podcast|cinematic|minimal|card|bold).
+   *  Absent → the content mode's default preset (clippies: mrbeast, mindcuts: podcast). */
+  style?: string;
   accent: string;
   perVideoCap?: number;
-  /** Resolved caption style config; absent → renderer's legacy bold look. */
+  /** Resolved caption style config; absent → resolved from style/mode + captionOverrides. */
   caption?: CaptionStyle;
+  /** CLI caption fine-tuning flags, applied on top of whichever preset wins. */
+  captionOverrides?: CaptionOverrides;
+  /** Content mode: 'clippies' | 'mindcuts' | 'auto'/undefined = detect per video. */
+  mode?: string;
+  /** Contextual B-roll (narrative overlay): true = force on, false = off,
+   *  undefined = the mode's default (on for mindcuts). */
+  broll?: boolean;
+  brollDir?: string;
+  maxBroll?: number;
   /** Background music: true/undefined = auto (on when ./music has a matching track). */
   music?: boolean;
   musicVolume?: number;
@@ -162,14 +175,18 @@ export async function analyzeVideo(url: string, opts: AllOpts): Promise<VideoAna
   if (semantic.length > 0) sp.succeed(`semantic: ${semantic.length} windows (${provider})`);
   else sp.warn('semantic: unavailable → trigger+audio fallback');
 
+  // v6 mode: explicit --mode wins; otherwise detect from metadata + semantic profile.
+  const profile = resolveMode(opts.mode, meta, semantic);
+  logger.info(`Mode: ${profile.name}${opts.mode && opts.mode !== 'auto' ? '' : ' (auto-detected)'} — clips ${profile.lengths.min}-${profile.lengths.max}s`);
+
   sp = ora('Detecting clips…').start();
   const boosts = commentBoosts(meta.topComments ?? [], 30, meta.duration);
   const windows = scoreWindows(meta.duration, triggers, audio, semantic, boosts);
   const threshold = opts.minScore ?? defaultMinScore(windows);
-  const candidates = buildClips(windows, segments, audio, threshold, meta.duration);
+  const candidates = buildClips(windows, segments, audio, threshold, meta.duration, profile.lengths);
   sp.succeed(`Found ${candidates.length} candidates${boosts.length ? ` (${boosts.length} viewer-flagged moments)` : ''}`);
 
-  return { jobId, url, videoPath: dl.videoPath, meta, segments, triggers, audio, semantic, candidates };
+  return { jobId, url, videoPath: dl.videoPath, meta, segments, triggers, audio, semantic, candidates, mode: profile.name };
 }
 
 /**
@@ -230,7 +247,10 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
         logger.warn(`[${analysis.jobId}] all strong moments already exported in earlier runs — rerun with --allow-repeats to reuse them`);
       }
     }
-    const ranked = rank(candidates, analysis.segments, { top: Infinity, minScore: opts.minScore }, analysis.semantic);
+    // Mode grammar shapes the ordering: clippies rank up humor/shock, mindcuts wisdom/story.
+    const ranked = rank(candidates, analysis.segments, {
+      top: Infinity, minScore: opts.minScore, priorities: MODE_PROFILES[analysis.mode].priorities,
+    }, analysis.semantic);
     for (const clip of ranked) pool.push({ clip, source: analysis });
   }
 
@@ -251,10 +271,12 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
   // go into the manifest.
   const succeeded: SourcedRankedClip[] = [];
   const packs = new Map<string, SeoPack>();
+  const brollByClip = new Map<string, BrollSegment[]>();
   for (const { clip, source } of selected) {
     const sp2 = ora(`[${clip.clip_id}] (${source.jobId}) extract + caption…`).start();
     const finalPath = join(exportsDir, `${clip.clip_id}_final.mp4`);
     const clipsDir = join(WS, 'clips', source.jobId);
+    const profile = MODE_PROFILES[source.mode];
 
     try {
       // SEO pack from THIS clip's source metadata (batch runs mix creators).
@@ -274,18 +296,36 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
       const hookText = clip.hook_moment ? hookCardText(clip.hook_moment) : undefined;
       const accentColor = sentimentColor(clip.sentiment, opts.accent);
 
-      // Arrow callouts at the speaker's face on the same peak moments the zooms hit.
-      const callouts = opts.zooms === false ? [] : planCallouts(
+      // Contextual B-roll (narrative overlay): on for mindcuts by default, forced via --broll.
+      // Entirely fail-soft — a clip never fails over B-roll.
+      const brollOn = opts.broll ?? profile.brollDefault;
+      const overlays = brollOn ? await acquireBroll({
+        segments: source.segments, clipStart: clip.start, clipEnd: clip.end,
+        sentiment: clip.sentiment, maxBroll: opts.maxBroll ?? profile.maxBroll,
+        cacheDir: opts.brollDir ?? process.env.BROLL_DIR ?? './broll_cache',
+        excludeId: source.jobId, label: clip.clip_id,
+      }) : [];
+      if (overlays.length > 0) brollByClip.set(clip.clip_id, overlays);
+
+      // Arrow callouts at the speaker's face on the same peak moments the zooms hit —
+      // suppressed while B-roll covers the face.
+      const callouts = filterCallouts(opts.zooms === false ? [] : planCallouts(
         buildZoomSfxTimes(captionWords), faces,
         { mode, track, srcW: source.meta.width, srcH: source.meta.height },
-      );
+      ), overlays);
+
+      // Caption preset: explicit --style wins; otherwise the mode's grammar picks.
+      const preset = opts.style ?? profile.captionPreset;
+      const caption = opts.caption ?? resolveCaptionStyle(preset, opts.captionOverrides ?? {});
 
       await render({
         rawClipPath: fullPath, words: captionWords, outPath: finalPath, fps: source.meta.fps,
-        accentColor, style: legacyStyle(opts.style), caption: opts.caption, zooms: opts.zooms,
+        accentColor, style: legacyStyle(preset), caption, zooms: opts.zooms,
+        zoomIntensity: profile.zoomIntensity,
         framing: mode,
         ...(mode === 'crop' ? { cropTrack: track, srcW: source.meta.width, srcH: source.meta.height } : {}),
         ...(callouts.length > 0 ? { callouts } : {}),
+        ...(overlays.length > 0 ? { broll: overlays } : {}),
         hookText,
       });
       if (callouts.length > 0) logger.info(`[${clip.clip_id}] ${callouts.length} arrow callout(s)`);
@@ -359,7 +399,7 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
   if (ranked.length < selected.length) {
     logger.warn(`${selected.length - ranked.length}/${selected.length} clip(s) failed/skipped; manifest has the ${ranked.length} that exported.`);
   }
-  await writeExports(exportsDir, id, primary.url, primary.meta, ranked, packs);
+  await writeExports(exportsDir, id, primary.url, primary.meta, ranked, packs, brollByClip);
 
   const head = analyses.length === 1 ? ['Rank', 'Score', 'Dur', 'Excerpt'] : ['Rank', 'Score', 'Dur', 'Source', 'Excerpt'];
   const table = new Table({ head });

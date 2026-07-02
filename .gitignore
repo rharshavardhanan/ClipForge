@@ -7,3 +7,4 @@ remotion/public/
 *.log
 .DS_Store
 remotion/props_*.json
+broll_cache/

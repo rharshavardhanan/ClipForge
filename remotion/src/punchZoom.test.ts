@@ -38,3 +38,15 @@ describe('punchScaleAt', () => {
     expect(punchScaleAt([10], 10.9)).toBeCloseTo(1, 5);      // done
   });
 });
+
+describe('zoom intensity (v6 modes)', () => {
+  it('scales the punch amplitude without changing timing', () => {
+    const events = [2];
+    const full = punchScaleAt(events, 2.2, 1);      // in the hold window → full peak
+    const subtle = punchScaleAt(events, 2.2, 0.5);
+    expect(full).toBeCloseTo(1.08);
+    expect(subtle).toBeCloseTo(1.04);
+    expect(punchScaleAt(events, 1.9, 0.5)).toBe(1); // before event: unchanged
+    expect(punchScaleAt(events, 3.5, 0.5)).toBe(1); // after release: unchanged
+  });
+});

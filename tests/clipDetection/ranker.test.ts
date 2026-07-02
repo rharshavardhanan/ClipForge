@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { rank, defaultMinScore, clipText } from '../../src/clipDetection/ranker.js';
+import { rank, defaultMinScore, clipText, priorityBoost } from '../../src/clipDetection/ranker.js';
 import type { ClipCandidate, SemanticWindow, TranscriptSegment, WindowScore } from '../../src/types/index.js';
 
 const segs: TranscriptSegment[] = [
@@ -135,5 +135,44 @@ describe('ranker', () => {
     ];
     const r = rank(cands, segs, { top: 5, minScore: 0 });
     expect(r).toHaveLength(1);
+  });
+});
+
+describe('priorityBoost (v6 modes)', () => {
+  const sw = {
+    start: 0, end: 30, semantic_score: 5,
+    scores: {
+      emotional_intensity: 0, controversy: 0, humor: 10, surprise: 10,
+      wisdom: 0, storytelling_tension: 0, argument_peak: 0, relatability: 0,
+    },
+    hook_moment: 'h', clip_titles: [], is_standalone: true, recommended_duration: 30,
+    sentiment: 'funny', reason: 'r',
+  } as const;
+
+  it('is 0 without a window or priorities, ≤1.5 otherwise', () => {
+    expect(priorityBoost(null, ['humor'])).toBe(0);
+    expect(priorityBoost(sw as never, undefined)).toBe(0);
+    expect(priorityBoost(sw as never, ['humor', 'surprise'])).toBeCloseTo(1.5);
+    expect(priorityBoost(sw as never, ['wisdom'])).toBe(0);
+  });
+
+  it('reorders near-equal candidates toward the mode grammar', () => {
+    const segs = [
+      { id: 0, start: 0, end: 30, text: 'alpha beta gamma delta epsilon', words: [] },
+      { id: 1, start: 100, end: 130, text: 'zeta eta theta iota kappa', words: [] },
+    ];
+    const funnyWin = { ...sw, start: 0, end: 30 };
+    const wiseWin = {
+      ...sw, start: 100, end: 130,
+      scores: { ...sw.scores, humor: 0, surprise: 0, wisdom: 10, storytelling_tension: 10 },
+    };
+    const cands = [
+      { start: 0, end: 30, composite: 7.0, triggerScore: 5, audioScore: 5 },
+      { start: 100, end: 130, composite: 7.2, triggerScore: 5, audioScore: 5 },
+    ];
+    const clippies = rank(cands, segs as never, { top: 2, priorities: ['humor', 'surprise'] }, [funnyWin, wiseWin] as never);
+    expect(clippies[0].start).toBe(0);            // humor boost outranks the 0.2 composite gap
+    const neutral = rank(cands, segs as never, { top: 2 }, [funnyWin, wiseWin] as never);
+    expect(neutral[0].start).toBe(100);           // without priorities, raw composite wins
   });
 });
