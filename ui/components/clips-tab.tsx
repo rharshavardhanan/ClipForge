@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Badge, Button, Card } from './ui';
+import { Badge, Button, Card, Field, inputCls } from './ui';
 import { Icon } from './icons';
 import type { ExportJob } from '@/lib/workspace';
 
@@ -11,8 +11,55 @@ function sentimentTone(s?: string): 'zinc' | 'gold' | 'green' | 'red' {
   return 'zinc';
 }
 
+interface PublishState {
+  job: string; clip: string; title: string; description: string; privacy: string;
+  busy: boolean; result?: string; error?: string;
+}
+
 export function ClipsTab({ jobs, onRefresh }: { jobs: ExportJob[]; onRefresh: () => void }) {
   const [open, setOpen] = useState<string | null>(jobs[0]?.id ?? null);
+  const [pub, setPub] = useState<PublishState | null>(null);
+  const [copied, setCopied] = useState<string | null>(null);
+
+  async function openPublish(jobId: string, c: ExportJob['clips'][number]) {
+    let seo: { title?: string; description?: string } = {};
+    try {
+      const r = await fetch(`/api/video?job=${encodeURIComponent(jobId)}&file=${encodeURIComponent(c.files.json)}`);
+      seo = (await r.json())?.seo ?? {};
+    } catch { /* dialog still opens with fallbacks */ }
+    setPub({
+      job: jobId, clip: c.clipId, privacy: 'public', busy: false,
+      title: seo.title ?? c.title ?? c.clipId, description: seo.description ?? '',
+    });
+  }
+
+  async function copyCaption(jobId: string, clipId: string) {
+    const r = await fetch(`/api/video?job=${encodeURIComponent(jobId)}&file=${encodeURIComponent(`${clipId}_description.txt`)}`);
+    await navigator.clipboard.writeText(await r.text());
+    setCopied(`${jobId}/${clipId}`);
+    setTimeout(() => setCopied(null), 1500);
+  }
+
+  async function doPublish() {
+    if (!pub || pub.busy) return;
+    setPub({ ...pub, busy: true, error: undefined, result: undefined });
+    try {
+      const r = await fetch('/api/publish', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ job: pub.job, clip: pub.clip, title: pub.title, description: pub.description, privacy: pub.privacy }),
+      });
+      const j = await r.json();
+      if (j.ok) {
+        setPub({ ...pub, busy: false, result: j.result.locked
+          ? `Uploaded — YouTube locked it private (unverified Cloud app). Publish it in Studio: ${j.result.url}`
+          : `Live (${j.result.privacyStatus}): ${j.result.url}` });
+      } else {
+        setPub({ ...pub, busy: false, error: j.error ?? 'upload failed' });
+      }
+    } catch (e) {
+      setPub({ ...pub, busy: false, error: e instanceof Error ? e.message : String(e) });
+    }
+  }
 
   if (jobs.length === 0) {
     return (
@@ -67,10 +114,14 @@ export function ClipsTab({ jobs, onRefresh }: { jobs: ExportJob[]; onRefresh: ()
                     </div>
                     {c.title && <p className="text-sm font-semibold leading-snug text-zinc-100">{c.title}</p>}
                     {c.hook && <p className="line-clamp-2 text-xs italic text-zinc-400">“{c.hook}”</p>}
-                    <div className="mt-auto flex gap-3 pt-1 text-xs">
+                    <div className="mt-auto flex flex-wrap gap-3 pt-1 text-xs">
                       <a className="font-medium text-zinc-400 hover:text-gold" href={`/api/video?job=${job.id}&file=${c.files.srt}`} download>.srt</a>
                       <a className="font-medium text-zinc-400 hover:text-gold" href={`/api/video?job=${job.id}&file=${c.files.json}`} target="_blank">.json</a>
                       <a className="font-medium text-zinc-400 hover:text-gold" href={`/api/video?job=${job.id}&file=${c.files.raw}`} download>raw</a>
+                      <button className="font-semibold text-zinc-300 hover:text-gold" onClick={() => openPublish(job.id, c)}>▶ YouTube</button>
+                      <button className="font-medium text-zinc-400 hover:text-gold" onClick={() => copyCaption(job.id, c.clipId)}>
+                        {copied === `${job.id}/${c.clipId}` ? '✓ copied' : 'IG caption'}
+                      </button>
                     </div>
                   </div>
                 ))}
@@ -92,6 +143,46 @@ export function ClipsTab({ jobs, onRefresh }: { jobs: ExportJob[]; onRefresh: ()
           </Card>
         );
       })}
+
+      {pub && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4" onClick={() => !pub.busy && setPub(null)}>
+          <div className="w-full max-w-lg" onClick={(e) => e.stopPropagation()}>
+            <Card className="flex flex-col gap-4">
+              <p className="font-display text-base font-semibold text-zinc-100">Upload {pub.clip} to YouTube</p>
+              <Field label="Title" hint={`${pub.title.length}/100`}>
+                <input className={inputCls} value={pub.title} maxLength={100}
+                  onChange={(e) => setPub({ ...pub, title: e.target.value })} />
+              </Field>
+              <Field label="Description">
+                <textarea className={`${inputCls} h-32 resize-y`} value={pub.description}
+                  onChange={(e) => setPub({ ...pub, description: e.target.value })} />
+              </Field>
+              <div className="flex items-center gap-3">
+                <select className={inputCls} value={pub.privacy} disabled={pub.busy}
+                  onChange={(e) => setPub({ ...pub, privacy: e.target.value })}>
+                  <option value="public">Public</option>
+                  <option value="unlisted">Unlisted</option>
+                  <option value="private">Private</option>
+                </select>
+                <Badge>Not made for kids</Badge>
+                <div className="ml-auto flex gap-2">
+                  <Button variant="outline" size="sm" onClick={() => setPub(null)} disabled={pub.busy}>Close</Button>
+                  <Button size="sm" onClick={doPublish} disabled={pub.busy || !pub.title.trim()}>
+                    {pub.busy ? 'Uploading…' : 'Upload'}
+                  </Button>
+                </div>
+              </div>
+              {pub.result && <p className="break-all text-xs text-green-400">{pub.result}</p>}
+              {pub.error && (
+                <p className="break-all text-xs text-red-400">
+                  {pub.error}
+                  {/auth|YT_CLIENT/i.test(pub.error) ? ' — set YT_CLIENT_ID/SECRET in .env and run `clipforge auth youtube` in a terminal first.' : ''}
+                </p>
+              )}
+            </Card>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
