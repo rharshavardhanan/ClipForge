@@ -70,7 +70,7 @@ export function rank(
       trigger_score: +cand.triggerScore.toFixed(2), pacing_score: 0, metadata_score: +(cand.commentScore ?? 0).toFixed(2),
       hook_moment: sw ? sw.hook_moment : '', clip_titles: sw ? sw.clip_titles : [],
       is_standalone: sw ? sw.is_standalone : true,
-      recommended_duration: sw ? sw.recommended_duration : (duration <= 35 ? 30 : duration <= 50 ? 45 : duration <= 75 ? 60 : 90),
+      recommended_duration: sw ? Math.min(30, sw.recommended_duration) : (duration <= 18 ? 15 : duration <= 24 ? 20 : 30),
       reason: sw ? sw.reason : fallbackReason,
       transcript_excerpt: text.slice(0, 200),
       sentiment: sw ? sw.sentiment : undefined,

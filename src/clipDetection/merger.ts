@@ -19,10 +19,14 @@ export function coldOpenTrim(start: number, silences: SilenceRegion[]): number {
   return covering ? covering.end : start;
 }
 
+// Short-form retention: keep clips punchy. Under ~30s holds viewers far better than 60-90s.
+export const MAX_CLIP_SEC = 30;
+export const MIN_CLIP_SEC = 15;
+
 export function clampDuration(start: number, end: number): { start: number; end: number } {
   let e = end;
-  if (e - start > 90) e = start + 90;          // hard cap
-  if (e - start < 30) e = start + 30;          // pull up short clips
+  if (e - start > MAX_CLIP_SEC) e = start + MAX_CLIP_SEC;   // hard cap
+  if (e - start < MIN_CLIP_SEC) e = start + MIN_CLIP_SEC;   // pull up very short clips
   return { start, end: e };
 }
 
@@ -43,14 +47,14 @@ export function buildClips(
     let start = peak.start;
     let end = peak.end;
 
-    // Expand outward over consecutive windows whose composite stays >= floor, capped at 90s.
+    // Expand outward over consecutive windows whose composite stays >= floor, capped at MAX_CLIP_SEC.
     let i = pi;
-    while (i - 1 >= 0 && sorted[i - 1].composite >= floor && end - sorted[i - 1].start <= 90) {
+    while (i - 1 >= 0 && sorted[i - 1].composite >= floor && end - sorted[i - 1].start <= MAX_CLIP_SEC) {
       i--;
       start = sorted[i].start;
     }
     let j = pi;
-    while (j + 1 < sorted.length && sorted[j + 1].composite >= floor && sorted[j + 1].end - start <= 90) {
+    while (j + 1 < sorted.length && sorted[j + 1].composite >= floor && sorted[j + 1].end - start <= MAX_CLIP_SEC) {
       j++;
       end = sorted[j].end;
     }

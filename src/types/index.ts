@@ -64,6 +64,8 @@ export interface ClipCompositionProps {
   caption?: import('../captions/presets.js').CaptionStyle;
   /** Punch zooms on emphasized moments (EG2). Default true. */
   zooms?: boolean;
+  /** Base framing: 'blur' (default) or 'crop' (smart face-crop via cropTrack). */
+  framing?: 'blur' | 'crop';
 }
 
 // Ranking video render mode (RV1/RV2) — mirrors remotion/src/rankingLogic.ts

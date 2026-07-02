@@ -17,4 +17,10 @@ describe('pickSemanticProvider', () => {
     expect(pickSemanticProvider({})).toBe('none');
     expect(pickSemanticProvider({ ANTHROPIC_API_KEY: '', GEMINI_API_KEY: '  ' })).toBe('none');
   });
+
+  it('SEMANTIC_PROVIDER forces the choice (free Gemini even when Claude key present)', () => {
+    expect(pickSemanticProvider({ SEMANTIC_PROVIDER: 'gemini', ANTHROPIC_API_KEY: 'sk', GEMINI_API_KEY: 'g' })).toBe('gemini');
+    expect(pickSemanticProvider({ SEMANTIC_PROVIDER: 'claude', GEMINI_API_KEY: 'g' })).toBe('none'); // forced claude but no key
+    expect(pickSemanticProvider({ SEMANTIC_PROVIDER: 'none', ANTHROPIC_API_KEY: 'sk' })).toBe('none');
+  });
 });

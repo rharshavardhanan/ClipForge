@@ -64,6 +64,12 @@ describe('buildProps', () => {
     expect(buildProps({ ...baseOpts, zooms: false }, 10, 'input/x.mp4').zooms).toBe(false);
   });
 
+  it('carries the framing mode through (blur default via undefined, crop when set)', () => {
+    expect(buildProps({ ...baseOpts, framing: 'crop' }, 10, 'input/x.mp4').framing).toBe('crop');
+    expect(buildProps({ ...baseOpts, framing: 'blur' }, 10, 'input/x.mp4').framing).toBe('blur');
+    expect(buildProps(baseOpts, 10, 'input/x.mp4').framing).toBeUndefined();
+  });
+
   it('carries cropTrack/srcW/srcH through when provided', () => {
     const props = buildProps(
       { ...baseOpts, cropTrack: [{ time: 0, cx: 1, cy: 2, cropW: 3, cropH: 4 }], srcW: 1920, srcH: 1080 },
