@@ -23,6 +23,9 @@ import { planFraming } from '../../extraction/faceTracker.js';
 import { render } from '../../captions/remotionRenderer.js';
 import { scanLibrary, pickTrack, sentimentToMood } from '../../music/library.js';
 import { mixMusic } from '../../music/mixer.js';
+import { scanSfxLibrary } from '../../sfx/library.js';
+import { planSfx } from '../../sfx/events.js';
+import { mixSfx } from '../../sfx/mixer.js';
 import { writeExports } from '../../export/exporter.js';
 import { buildSeoPack, type SeoPack } from '../../export/seo.js';
 import { pickThumbnailTime, generateThumbnail } from '../../export/thumbnail.js';
@@ -66,6 +69,10 @@ export interface AllOpts {
   musicDir?: string;
   /** Punch zooms on emphasized moments. Default true. */
   zooms?: boolean;
+  /** Sound-design SFX (whoosh on zooms, impact under hook): true/undefined = auto (on when ./sfx has one-shots). */
+  sfx?: boolean;
+  sfxVolume?: number;
+  sfxDir?: string;
   /** Delete the downloaded source video + clip intermediates after a successful export (frees disk). */
   deleteSource?: boolean;
 }
@@ -216,6 +223,9 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
   const musicLib = opts.music === false
     ? {}
     : await scanLibrary(opts.musicDir ?? process.env.MUSIC_DIR ?? './music');
+  const sfxLib = opts.sfx === false
+    ? {}
+    : await scanSfxLibrary(opts.sfxDir ?? process.env.SFX_DIR ?? './sfx');
 
   // Render each clip independently — a single clip that errors or hangs (killed by the render
   // stall-watchdog) is skipped so it can't lose the whole batch. Only clips that fully export
@@ -255,6 +265,17 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
       logger.info(mode === 'crop'
         ? `[${clip.clip_id}] smart-crop (${track.length} face keyframes)`
         : `[${clip.clip_id}] blur-background framing`);
+
+      // sound design: impact under the hook card + whooshes on the punch-zoom moments
+      const sfxEvents = planSfx(captionWords, sfxLib, {
+        hasHook: Boolean(hookText), zooms: opts.zooms !== false, seed: `${source.jobId}_${clip.clip_id}`,
+      });
+      if (sfxEvents.length) {
+        const tmpSfx = finalPath.replace(/\.mp4$/, '.sfx.mp4');
+        await mixSfx(finalPath, sfxEvents, tmpSfx, { sfxVolume: opts.sfxVolume ?? 0.6 });
+        await rename(tmpSfx, finalPath);
+        logger.info(`[${clip.clip_id}] sfx: ${sfxEvents.length} event(s)`);
+      }
 
       // mood-matched background music, ducked under speech (skipped when no track fits)
       const mood = sentimentToMood(clip.sentiment);
