@@ -51,10 +51,17 @@ program.command('all').argument('<url>', 'YouTube URL')
   .option('--caption-color <hex>', 'caption base color override')
   .option('--stroke <px>', 'caption stroke width override', (v) => parseInt(v, 10))
   .option('--position <p>', 'caption position: bottom|center')
+  .option('--no-music', 'disable background music')
+  .option('--music-volume <v>', 'music bed level 0-1 before ducking', (v) => parseFloat(v), 0.25)
+  .option('--music-dir <p>', 'music library folder', process.env.MUSIC_DIR ?? './music')
   .action(async (url, o) => {
     await preflightOrExit();
-    try { await runAll(url, { top: o.top, minScore: o.minScore, style: o.style, accent: o.accent, caption: captionFromFlags(o) }); }
-    catch (e) { logger.error((e as Error).stack ?? String(e)); process.exit(1); }
+    try {
+      await runAll(url, {
+        top: o.top, minScore: o.minScore, style: o.style, accent: o.accent, caption: captionFromFlags(o),
+        music: o.music, musicVolume: o.musicVolume, musicDir: o.musicDir,
+      });
+    } catch (e) { logger.error((e as Error).stack ?? String(e)); process.exit(1); }
   });
 
 program.command('ingest').argument('<url>', 'YouTube URL')
@@ -78,6 +85,9 @@ program.command('batch')
   .option('--position <p>', 'caption position: bottom|center')
   .option('--per-video-cap <n>', 'max clips from any single video (default: no cap)', (v) => parseInt(v, 10))
   .option('--ranking', 'also render a #N→#1 countdown ranking video from the exported clips')
+  .option('--no-music', 'disable background music')
+  .option('--music-volume <v>', 'music bed level 0-1 before ducking', (v) => parseFloat(v), 0.25)
+  .option('--music-dir <p>', 'music library folder', process.env.MUSIC_DIR ?? './music')
   .action(async (urls, o) => {
     await preflightOrExit();
     const resolved = resolveBatchUrls(urls);
@@ -86,6 +96,7 @@ program.command('batch')
       const exportsDir = await runBatch(resolved, {
         top: o.top, minScore: o.minScore, style: o.style, accent: o.accent, perVideoCap: o.perVideoCap,
         caption: captionFromFlags(o),
+        music: o.music, musicVolume: o.musicVolume, musicDir: o.musicDir,
       });
       if (o.ranking) await runRankingRender(exportsDir, { accent: o.accent, cardSec: 1.5 });
     } catch (e) { logger.error((e as Error).stack ?? String(e)); process.exit(1); }

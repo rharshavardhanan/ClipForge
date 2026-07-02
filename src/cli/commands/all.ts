@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
-import { join } from 'node:path';
-import { copyFile, mkdir } from 'node:fs/promises';
+import { basename, join } from 'node:path';
+import { copyFile, mkdir, rename } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import ora from 'ora';
 import Table from 'cli-table3';
@@ -20,6 +20,8 @@ import { writeSrt } from '../../captions/srtGenerator.js';
 import { extractRaw, extractFullFrame } from '../../extraction/clipExtractor.js';
 import { detectFaceTrack } from '../../extraction/faceTracker.js';
 import { render } from '../../captions/remotionRenderer.js';
+import { scanLibrary, pickTrack, sentimentToMood } from '../../music/library.js';
+import { mixMusic } from '../../music/mixer.js';
 import { writeExports } from '../../export/exporter.js';
 import { logger } from '../../utils/logger.js';
 import type { RankedClip, TranscriptSegment, VideoAnalysis } from '../../types/index.js';
@@ -54,6 +56,10 @@ export interface AllOpts {
   perVideoCap?: number;
   /** Resolved caption style config; absent → renderer's legacy bold look. */
   caption?: CaptionStyle;
+  /** Background music: true/undefined = auto (on when ./music has a matching track). */
+  music?: boolean;
+  musicVolume?: number;
+  musicDir?: string;
 }
 
 /** PURE: coerce a preset name onto the legacy Remotion style prop (unknown → bold). */
@@ -167,6 +173,10 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
   const id = analyses.length === 1 ? analyses[0].jobId : batchId(analyses.map((a) => a.url));
   const exportsDir = join(WS, 'exports', id);
 
+  const musicLib = opts.music === false
+    ? {}
+    : await scanLibrary(opts.musicDir ?? process.env.MUSIC_DIR ?? './music');
+
   for (const { clip, source } of selected) {
     const sp2 = ora(`[${clip.clip_id}] (${source.jobId}) extract + caption…`).start();
     const finalPath = join(exportsDir, `${clip.clip_id}_final.mp4`);
@@ -199,6 +209,16 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
       await render({ rawClipPath: rawPath, words: captionWords, outPath: finalPath, fps: source.meta.fps, accentColor, style: legacyStyle(opts.style), caption: opts.caption, hookText });
       producedRawPath = rawPath;
       logger.info(`[${clip.clip_id}] center-crop fallback (no faces detected)`);
+    }
+
+    // mood-matched background music, ducked under speech (skipped when no track fits)
+    const mood = sentimentToMood(clip.sentiment);
+    const musicTrack = pickTrack(musicLib, mood, `${source.jobId}_${clip.clip_id}`);
+    if (musicTrack) {
+      const tmpPath = finalPath.replace(/\.mp4$/, '.music.mp4');
+      await mixMusic(finalPath, musicTrack, tmpPath, { musicVolume: opts.musicVolume ?? 0.25 });
+      await rename(tmpPath, finalPath);
+      logger.info(`[${clip.clip_id}] music: ${basename(musicTrack)} (${mood})`);
     }
 
     // copy raw into exports for completeness
