@@ -180,6 +180,16 @@ export function isRateLimitError(e: unknown): boolean {
 }
 
 /**
+ * PURE: true if the error is a PER-DAY free-tier quota exhaustion (e.g. the 20 requests/day
+ * cap on gemini-2.5-flash). Unlike a per-minute rate limit, this won't recover for hours —
+ * so retrying/cooling-down is pointless and we should abort the whole layer.
+ */
+export function isDailyQuotaError(e: unknown): boolean {
+  const message = e instanceof Error ? e.message : String(e);
+  return /PerDay/i.test(message);
+}
+
+/**
  * PURE: extract a retryDelay (ms) from a Gemini error's message, e.g. a
  * RetryInfo detail like {"retryDelay":"19s"}. Returns null if not found/parsable.
  */
@@ -246,7 +256,12 @@ export async function analyzeSemantic(
   // (one per available key), but keep it bounded and simple.
   const concurrency = Math.max(BATCH_CONCURRENCY, Math.min(pool.size(), batches.length));
 
+  // Once every key's PER-DAY free-tier quota is exhausted, stop — it won't recover for hours,
+  // so grinding through 40-48s retries on every remaining batch is pure waste.
+  let dailyExhausted = false;
+
   const batchResults = await mapWithConcurrency(batches, concurrency, async (batch, batchIndex): Promise<(SemanticWindow | null)[]> => {
+    if (dailyExhausted) return batch.map(() => null);
     // Small stagger between batch kickoffs to smooth request bursts against the rate limit.
     if (batchIndex > 0) await sleep(INTER_BATCH_DELAY_MS);
 
@@ -264,7 +279,10 @@ export async function analyzeSemantic(
             pool.reportSuccess(key);
             return parsed;
           } catch (e) {
-            if (isRateLimitError(e)) {
+            if (isDailyQuotaError(e)) {
+              // Per-day cap: mark the key exhausted for a long time so the pool stops picking it.
+              pool.reportRateLimited(key, 6 * 60 * 60 * 1000);
+            } else if (isRateLimitError(e)) {
               const delay = parseRetryDelayMs(e) ?? DEFAULT_RATE_LIMIT_COOLDOWN_MS;
               pool.reportRateLimited(key, delay);
               logger.warn(`[${label}] key rate-limited, cooling down ${delay}ms and rotating to next key`);
@@ -272,7 +290,7 @@ export async function analyzeSemantic(
             throw e;
           }
         },
-        { attempts: Math.max(4, pool.size()), label },
+        { attempts: Math.max(4, pool.size()), label, shouldRetry: (e) => !isDailyQuotaError(e) },
       );
 
       // Map what we can by index; skip the rest rather than crashing on a short/garbled batch.
@@ -282,6 +300,10 @@ export async function analyzeSemantic(
         return toWindow(chunk, item);
       });
     } catch (e) {
+      if (isDailyQuotaError(e) && !dailyExhausted) {
+        dailyExhausted = true;
+        logger.warn('Gemini free-tier DAILY quota exhausted (20 req/day per project) — stopping semantic layer. Add more keys from SEPARATE Google projects (GEMINI_API_KEYS), use a paid key, or SEMANTIC_PROVIDER=none. Falling back to audio+trigger scoring.');
+      }
       logger.warn(`[${label}] failed after retries: ${e instanceof Error ? e.message : String(e)}`);
       return batch.map(() => null);
     }

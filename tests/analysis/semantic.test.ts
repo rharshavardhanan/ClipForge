@@ -7,9 +7,20 @@ import {
   parseGeminiBatch,
   analyzeSemantic,
   isRateLimitError,
+  isDailyQuotaError,
   parseRetryDelayMs,
 } from '../../src/analysis/semantic.js';
 import type { TranscriptSegment, SemanticScores } from '../../src/types/index.js';
+
+describe('isDailyQuotaError', () => {
+  it('flags per-day free-tier exhaustion (not recoverable today) but not per-minute limits', () => {
+    const daily = new Error('429 quotaId":"GenerateRequestsPerDayPerProjectPerModel-FreeTier","quotaValue":"20"');
+    expect(isDailyQuotaError(daily)).toBe(true);
+    expect(isRateLimitError(daily)).toBe(true); // it's still a 429
+    expect(isDailyQuotaError(new Error('429 GenerateRequestsPerMinutePerProject retry in 6s'))).toBe(false);
+    expect(isDailyQuotaError(new Error('failed to parse JSON'))).toBe(false);
+  });
+});
 
 const seg = (id: number, start: number, end: number, text: string): TranscriptSegment =>
   ({ id, start, end, text, words: [] });
