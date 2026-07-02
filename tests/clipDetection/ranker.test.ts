@@ -86,7 +86,7 @@ describe('ranker', () => {
     expect(r[0].hook_moment).toBe('you will not believe this');
     expect(r[0].semantic_score).toBe(9);
     expect(r[0].is_standalone).toBe(true);
-    expect(r[0].recommended_duration).toBe(30); // capped at 30s for short-form (semantic said 45)
+    expect(r[0].recommended_duration).toBe(45); // adaptive length: semantic 45s allowed (60s cap)
     expect(r[0].sentiment).toBe('intense');
     expect(r[0].reason).toBe('huge emotional peak');
     expect(r[0].clip_titles).toEqual(['Title A', 'Title B', 'Title C']);
