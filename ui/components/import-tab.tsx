@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Button, Card, Field, inputCls } from './ui';
+import { Button, Card, Field, Stepper, inputCls } from './ui';
 import { RunLog } from './run-log';
 import type { StyleConfig } from './style-tab';
 
@@ -55,11 +55,7 @@ export function ImportTab({ style, onFinished }: { style: StyleConfig; onFinishe
 
       <div className="mt-4 flex flex-wrap items-end gap-4">
         <Field label="Max clips">
-          <input
-            type="number" min={1} max={20} value={top}
-            onChange={(e) => setTop(parseInt(e.target.value, 10) || 3)}
-            className={`${inputCls} w-24`}
-          />
+          <Stepper value={top} onChange={setTop} min={1} max={20} />
         </Field>
         <label className={`flex items-center gap-2 text-sm ${inputs.length > 1 ? 'text-zinc-300' : 'text-zinc-600'}`}>
           <input type="checkbox" checked={ranking} disabled={inputs.length < 2} onChange={(e) => setRanking(e.target.checked)} className="accent-amber-400" />
