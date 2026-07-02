@@ -4,7 +4,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export async function withRetry<T>(
   fn: () => Promise<T>,
-  opts: { attempts: number; label: string; baseMs?: number },
+  opts: { attempts: number; label: string; baseMs?: number; shouldRetry?: (e: unknown) => boolean },
 ): Promise<T> {
   const base = opts.baseMs ?? 1000;
   let lastErr: unknown;
@@ -14,6 +14,7 @@ export async function withRetry<T>(
     } catch (e) {
       lastErr = e;
       if (i === opts.attempts - 1) break;
+      if (opts.shouldRetry && !opts.shouldRetry(e)) break; // non-retryable (e.g. bad API key) — stop now
       const delay = base * Math.pow(4, i); // 1s, 4s, 16s with base=1000
       logger.warn(`[${opts.label}] attempt ${i + 1} failed: ${e instanceof Error ? e.message : String(e)}. Retrying in ${delay}ms`);
       await sleep(delay);

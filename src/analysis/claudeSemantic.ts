@@ -99,6 +99,14 @@ function textOf(response: Anthropic.Message): string {
   return response.content.filter((b): b is Anthropic.TextBlock => b.type === 'text').map((b) => b.text).join('');
 }
 
+/** PURE: an auth/permission failure (bad or revoked API key) — fatal for every batch, so don't retry. */
+export function isAuthError(e: unknown): boolean {
+  const status = (e as { status?: number })?.status;
+  if (status === 401 || status === 403) return true;
+  const msg = e instanceof Error ? e.message : String(e);
+  return /\b401\b|\b403\b|authentication_error|invalid x-api-key|permission_error/i.test(msg);
+}
+
 export interface ClaudeSemanticOpts {
   apiKey?: string;
   model?: string;
@@ -131,7 +139,12 @@ export async function analyzeSemanticClaude(
   const client = new Anthropic(apiKey ? { apiKey } : {});
   const batches = batchChunks(chunks, BATCH_SIZE);
 
+  // A bad API key (401) fails every batch identically — abort the whole layer after the first
+  // auth failure instead of grinding through all batches × retries, so we fall back fast.
+  let authFailed = false;
+
   const batchResults = await mapWithConcurrency(batches, CONCURRENCY, async (batch): Promise<(SemanticWindow | null)[]> => {
+    if (authFailed) return batch.map(() => null);
     const label = `claude-semantic-batch[${batch[0].start}-${batch[batch.length - 1].end}] (${batch.length} windows)`;
     try {
       const results = await withRetry(async () => {
@@ -143,7 +156,7 @@ export async function analyzeSemanticClaude(
         const parsed = parseClaudeBatch(textOf(res));
         if (!parsed) throw new Error('failed to parse Claude batch JSON response');
         return parsed;
-      }, { attempts: 3, label });
+      }, { attempts: 3, label, shouldRetry: (e) => !isAuthError(e) });
 
       return batch.map((chunk, i) => {
         const item = results[i];
@@ -151,6 +164,10 @@ export async function analyzeSemanticClaude(
         return toWindow(chunk, item);
       });
     } catch (e) {
+      if (isAuthError(e) && !authFailed) {
+        authFailed = true;
+        logger.warn('Claude API key rejected (401/403) — aborting Claude layer, falling back to Gemini');
+      }
       logger.warn(`[${label}] failed after retries: ${e instanceof Error ? e.message : String(e)}`);
       return batch.map(() => null);
     }
