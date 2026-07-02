@@ -69,12 +69,17 @@ export async function render(opts: RenderOpts): Promise<void> {
   try {
     await copyFile(opts.rawClipPath, publicCopy);
     await writeFile(propsPath, JSON.stringify(props));
+    // Remotion prints one "Rendered N/total" line per frame (hundreds per clip). Throttle to
+    // ~1/sec so the log stays readable and doesn't look frozen on a slow-moving counter.
+    let lastLog = 0;
     await withRetry(
       () =>
         run('npx', buildRenderArgs(propsPath, resolve(opts.outPath)), {
           cwd: REMOTION_DIR,
+          // No render output for 3 min ⇒ a frame is hung; kill so the pipeline can skip this clip.
+          stallMs: 180_000,
           onStdout: (l) => {
-            if (l.includes('Rendered')) logger.info(l.trim());
+            if (l.includes('Rendered') && Date.now() - lastLog > 1000) { logger.info(l.trim()); lastLog = Date.now(); }
           },
         }),
       { attempts: 2, label: 'remotion' },

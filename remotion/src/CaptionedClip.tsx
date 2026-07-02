@@ -45,7 +45,7 @@ export const CaptionedClip: React.FC<ClipProps> = ({
         <>
           {/* Blurred backdrop: same video, cover-filled and heavily blurred; scaled up so the blur bleed doesn't show a hard edge. */}
           <AbsoluteFill style={{ overflow: 'hidden' }}>
-            <OffthreadVideo src={src} muted style={{ width: '100%', height: '100%', objectFit: 'cover', filter: 'blur(40px) brightness(0.6)', transform: 'scale(1.2)' }} />
+            <OffthreadVideo src={src} muted style={{ width: '100%', height: '100%', objectFit: 'cover', filter: 'blur(24px) brightness(0.55)', transform: 'scale(1.18)' }} />
           </AbsoluteFill>
           {/* Main video: contained (full width, letterboxed band), punch-zoom applied here. */}
           <AbsoluteFill style={{ transform: `scale(${punchScale})`, transformOrigin: 'center' }}>
