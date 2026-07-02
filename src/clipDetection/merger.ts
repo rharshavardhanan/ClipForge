@@ -41,6 +41,50 @@ export function clampDuration(start: number, end: number, lengths: ClipLengths =
   return { start, end: e };
 }
 
+/** A closing sentence may run this far past the mode max rather than being cut mid-word. */
+export const SENTENCE_SLACK_SEC = 3;
+
+/** PURE: latest sentence end in (start, cap], or null when no boundary fits. */
+function lastSentenceEndWithin(cap: number, start: number, segments: TranscriptSegment[]): number | null {
+  let best: number | null = null;
+  for (const s of segments) {
+    if (s.end > start && s.end <= cap && (best === null || s.end > best)) best = s.end;
+  }
+  return best;
+}
+
+/**
+ * PURE: sentence-aware length clamp — never cut mid-sentence. Over the max: finish the
+ * straddling sentence when it only slightly overshoots (≤ SENTENCE_SLACK_SEC), else retreat
+ * to the last sentence boundary under the cap. Under the min: extend forward to the end of
+ * the sentence that reaches the minimum. Falls back to hard times only when the transcript
+ * offers no usable boundary (e.g. one giant segment).
+ */
+export function clampToSentences(
+  start: number, end: number, segments: TranscriptSegment[], lengths: ClipLengths = DEFAULT_LENGTHS,
+): { start: number; end: number } {
+  let e = end;
+
+  if (e - start > lengths.max) {
+    const cap = start + lengths.max;
+    const straddling = segments.find((s) => cap > s.start && cap < s.end);
+    if (straddling && straddling.end - start <= lengths.max + SENTENCE_SLACK_SEC) {
+      e = straddling.end;                                     // let the sentence finish
+    } else {
+      const boundary = lastSentenceEndWithin(cap, start, segments);
+      e = boundary !== null && boundary - start >= lengths.min ? boundary : cap;
+    }
+  }
+
+  if (e - start < lengths.min) {
+    const target = start + lengths.min;
+    const reaching = segments.find((s) => s.end >= target);   // sentence whose end reaches the minimum
+    e = reaching && reaching.end - start <= lengths.max + SENTENCE_SLACK_SEC ? reaching.end : target;
+  }
+
+  return { start, end: e };
+}
+
 export function buildClips(
   windows: WindowScore[],
   segments: TranscriptSegment[],
@@ -75,9 +119,10 @@ export function buildClips(
     }
 
     // Snap to sentence boundaries, trim a cold open, clamp to the mode's min/max, cap at real duration.
+    // The clamp itself is sentence-aware — clips never end mid-sentence over a length cap.
     start = coldOpenTrim(snapStart(start, segments), audio.silence_regions);
     end = snapEnd(end, segments);
-    ({ start, end } = clampDuration(start, end, lengths));
+    ({ start, end } = clampToSentences(start, end, segments, lengths));
     end = Math.min(end, duration);
 
     // Drop candidates overlapping an already-kept clip (IOU > 0.5).
