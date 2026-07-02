@@ -25,6 +25,7 @@ import { scanLibrary, pickTrack, sentimentToMood } from '../../music/library.js'
 import { mixMusic } from '../../music/mixer.js';
 import { writeExports } from '../../export/exporter.js';
 import { buildSeoPack, type SeoPack } from '../../export/seo.js';
+import { pickThumbnailTime, generateThumbnail } from '../../export/thumbnail.js';
 import { logger } from '../../utils/logger.js';
 import type { RankedClip, TranscriptSegment, VideoAnalysis } from '../../types/index.js';
 import type { CaptionStyle } from '../../captions/presets.js';
@@ -264,6 +265,10 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
         await rename(tmpPath, finalPath);
         logger.info(`[${clip.clip_id}] music: ${basename(musicTrack)} (${mood})`);
       }
+
+      // thumbnail: loudest frame of the clip, stamped with the SEO thumbnail text
+      const thumbRel = Math.max(0, pickThumbnailTime(clip, source.audio.rms_curve) - clip.start);
+      await generateThumbnail(fullPath, thumbRel, pack.thumbnailText, join(exportsDir, `${clip.clip_id}_thumbnail.png`));
 
       // copy raw into exports for completeness
       await mkdir(exportsDir, { recursive: true });
