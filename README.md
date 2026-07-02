@@ -216,7 +216,7 @@ All outputs land in `workspace/exports/<jobId>/` (batches: `workspace/exports/ba
 | `ranking_titles.txt` | Countdown title options + per-rank lines |
 | `ranking_description.txt` | Ranking video SEO description + hashtags |
 
-Clip length is adaptive and mode-aware: sentence-snapped under the mode's soft cap (clippies 25s, mindcuts 45s), extending toward the mode max (45s / 60s) only while the surrounding moments hold peak-level heat (setup/payoff never cut mid-arc).
+Clip length is adaptive and mode-aware: sentence-snapped under the mode's soft cap (clippies 25s, mindcuts 45s), extending toward the mode max (45s / 60s) only while the surrounding moments hold peak-level heat (setup/payoff never cut mid-arc). Clips **always end on a sentence boundary** — a closing sentence may run up to ~3s past the cap rather than being cut mid-word.
 
 **Fresh clips on re-runs:** every exported clip's time-range is recorded per source video; running the same video again automatically skips that material and surfaces new moments (`--allow-repeats` to reuse). **Arrow callouts:** on a clip's 1–2 strongest moments an animated arrow points at the speaker's face (only when face tracking found one — arrows never point at nothing; disabled together with `--no-zooms`).
 

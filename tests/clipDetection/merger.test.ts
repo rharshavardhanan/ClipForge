@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { snapStart, snapEnd, coldOpenTrim, clampDuration, buildClips } from '../../src/clipDetection/merger.js';
+import { snapStart, snapEnd, coldOpenTrim, clampDuration, clampToSentences, buildClips } from '../../src/clipDetection/merger.js';
 import type { TranscriptSegment, WindowScore, AudioEnergyLayer } from '../../src/types/index.js';
 
 const segs: TranscriptSegment[] = [
@@ -129,5 +129,51 @@ describe('mode lengths (v6)', () => {
     const clips = buildClips(windows, longSegs, audio, 5, Infinity, { min: 15, soft: 25, max: 45 });
     expect(clips.length).toBeGreaterThanOrEqual(1);
     for (const c of clips) expect(c.end - c.start).toBeLessThanOrEqual(45);
+  });
+});
+
+describe('clampToSentences (never cut mid-sentence)', () => {
+  // Sentences: [0,10) [10,22) [22,31) [31,44) [44,58) [58,63)
+  const sentSegs: TranscriptSegment[] = [
+    { id: 0, start: 0, end: 10, text: 'a', words: [] },
+    { id: 1, start: 10, end: 22, text: 'b', words: [] },
+    { id: 2, start: 22, end: 31, text: 'c', words: [] },
+    { id: 3, start: 31, end: 44, text: 'd', words: [] },
+    { id: 4, start: 44, end: 58, text: 'e', words: [] },
+    { id: 5, start: 58, end: 63, text: 'f', words: [] },
+  ];
+  const L = { min: 15, soft: 25, max: 45 };
+
+  it('over max: finishes the straddling sentence when overshoot is small', () => {
+    // cap = 45, sentence [44,58) straddles → 58-0=58 > 45+3 → too big, retreat to 44
+    expect(clampToSentences(0, 63, sentSegs, L).end).toBe(44);
+    // cap = 10+45=55, straddling [44,58) ends at 58 ≤ 55+3 → sentence finishes
+    expect(clampToSentences(10, 63, sentSegs, L).end).toBe(58);
+  });
+
+  it('over max: retreats to the last sentence boundary under the cap', () => {
+    const { end } = clampToSentences(0, 63, sentSegs, L);
+    expect(sentSegs.some((s) => s.end === end)).toBe(true); // lands ON a boundary
+  });
+
+  it('under min: extends to the sentence end that reaches the minimum', () => {
+    // start 0, end 10 (9s < min 15) → sentence [10,22) reaches 15 → end 22
+    expect(clampToSentences(0, 10, sentSegs, L).end).toBe(22);
+  });
+
+  it('degenerate transcript (one giant segment) falls back to the hard cap', () => {
+    const giant: TranscriptSegment[] = [{ id: 0, start: 0, end: 300, text: 'x', words: [] }];
+    expect(clampToSentences(0, 300, giant, L).end).toBe(45);
+  });
+
+  it('buildClips output always ends on a sentence boundary (or hard cap fallback)', () => {
+    // Windows stay within the transcript span (0-63s), as scoreWindows produces in practice.
+    const windows = Array.from({ length: 6 }, (_, i) =>
+      ({ start: i * 10, end: Math.min(63, i * 10 + 10), triggerScore: 9, audioScore: 9, composite: 9 }));
+    const audio = { rms_curve: [], silence_regions: [] };
+    const clips = buildClips(windows, sentSegs, audio, 5, Infinity, L);
+    for (const c of clips) {
+      expect(sentSegs.some((s) => s.end === c.end) || c.end - c.start === L.max).toBe(true);
+    }
   });
 });
