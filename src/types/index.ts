@@ -60,6 +60,8 @@ export interface ClipCompositionProps {
   style: 'minimal' | 'card' | 'bold';
   accentColor: string; showHookCard: boolean; hookText: string;
   cropTrack?: CropKeyframe[]; srcW?: number; srcH?: number;
+  /** Full caption style config (SP2). Absent → renderer's legacy bold look. */
+  caption?: import('../captions/presets.js').CaptionStyle;
 }
 
 // Ranking video render mode (RV1/RV2) — mirrors remotion/src/rankingLogic.ts
