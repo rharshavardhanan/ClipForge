@@ -62,6 +62,8 @@ export interface ClipCompositionProps {
   cropTrack?: CropKeyframe[]; srcW?: number; srcH?: number;
   /** Full caption style config (SP2). Absent → renderer's legacy bold look. */
   caption?: import('../captions/presets.js').CaptionStyle;
+  /** Punch zooms on emphasized moments (EG2). Default true. */
+  zooms?: boolean;
 }
 
 // Ranking video render mode (RV1/RV2) — mirrors remotion/src/rankingLogic.ts
