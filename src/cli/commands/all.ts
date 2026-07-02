@@ -60,6 +60,8 @@ export interface AllOpts {
   music?: boolean;
   musicVolume?: number;
   musicDir?: string;
+  /** Punch zooms on emphasized moments. Default true. */
+  zooms?: boolean;
 }
 
 /** PURE: coerce a preset name onto the legacy Remotion style prop (unknown → bold). */
@@ -197,7 +199,7 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
     if (track.length > 0) {
       await render({
         rawClipPath: fullPath, words: captionWords, outPath: finalPath, fps: source.meta.fps,
-        accentColor, style: legacyStyle(opts.style), caption: opts.caption,
+        accentColor, style: legacyStyle(opts.style), caption: opts.caption, zooms: opts.zooms,
         cropTrack: track, srcW: source.meta.width, srcH: source.meta.height,
         hookText,
       });
@@ -206,7 +208,7 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
     } else {
       const rawPath = join(clipsDir, `${clip.clip_id}_raw.mp4`);
       await extractRaw(source.videoPath, clip.start, clip.end, { width: source.meta.width, height: source.meta.height }, rawPath);
-      await render({ rawClipPath: rawPath, words: captionWords, outPath: finalPath, fps: source.meta.fps, accentColor, style: legacyStyle(opts.style), caption: opts.caption, hookText });
+      await render({ rawClipPath: rawPath, words: captionWords, outPath: finalPath, fps: source.meta.fps, accentColor, style: legacyStyle(opts.style), caption: opts.caption, zooms: opts.zooms, hookText });
       producedRawPath = rawPath;
       logger.info(`[${clip.clip_id}] center-crop fallback (no faces detected)`);
     }

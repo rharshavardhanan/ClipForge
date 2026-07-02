@@ -54,12 +54,13 @@ program.command('all').argument('<url>', 'YouTube URL')
   .option('--no-music', 'disable background music')
   .option('--music-volume <v>', 'music bed level 0-1 before ducking', (v) => parseFloat(v), 0.25)
   .option('--music-dir <p>', 'music library folder', process.env.MUSIC_DIR ?? './music')
+  .option('--no-zooms', 'disable punch zooms on emphasized moments')
   .action(async (url, o) => {
     await preflightOrExit();
     try {
       await runAll(url, {
         top: o.top, minScore: o.minScore, style: o.style, accent: o.accent, caption: captionFromFlags(o),
-        music: o.music, musicVolume: o.musicVolume, musicDir: o.musicDir,
+        music: o.music, musicVolume: o.musicVolume, musicDir: o.musicDir, zooms: o.zooms,
       });
     } catch (e) { logger.error((e as Error).stack ?? String(e)); process.exit(1); }
   });
@@ -88,6 +89,7 @@ program.command('batch')
   .option('--no-music', 'disable background music')
   .option('--music-volume <v>', 'music bed level 0-1 before ducking', (v) => parseFloat(v), 0.25)
   .option('--music-dir <p>', 'music library folder', process.env.MUSIC_DIR ?? './music')
+  .option('--no-zooms', 'disable punch zooms on emphasized moments')
   .action(async (urls, o) => {
     await preflightOrExit();
     const resolved = resolveBatchUrls(urls);
@@ -96,7 +98,7 @@ program.command('batch')
       const exportsDir = await runBatch(resolved, {
         top: o.top, minScore: o.minScore, style: o.style, accent: o.accent, perVideoCap: o.perVideoCap,
         caption: captionFromFlags(o),
-        music: o.music, musicVolume: o.musicVolume, musicDir: o.musicDir,
+        music: o.music, musicVolume: o.musicVolume, musicDir: o.musicDir, zooms: o.zooms,
       });
       if (o.ranking) await runRankingRender(exportsDir, { accent: o.accent, cardSec: 1.5 });
     } catch (e) { logger.error((e as Error).stack ?? String(e)); process.exit(1); }

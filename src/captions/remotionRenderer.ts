@@ -32,6 +32,7 @@ export interface RenderOpts {
   srcH?: number;
   hookText?: string;
   caption?: CaptionStyle;
+  zooms?: boolean;
 }
 
 /** PURE: builds the Remotion composition props from render opts + a probed duration. */
@@ -49,6 +50,7 @@ export function buildProps(opts: RenderOpts, probedDurationSec: number, videoPat
     ...(opts.srcW !== undefined ? { srcW: opts.srcW } : {}),
     ...(opts.srcH !== undefined ? { srcH: opts.srcH } : {}),
     ...(opts.caption ? { caption: opts.caption } : {}),
+    zooms: opts.zooms ?? true,
   };
 }
 
