@@ -148,6 +148,7 @@ program.command('upload')
   .description('Upload exported clips to YouTube (title/description/tags/thumbnail from the SEO pack)')
   .argument('<exportsDir>', 'a workspace/exports/<id> directory containing clips_manifest.json')
   .option('--clips <ids>', 'comma-separated clip ids (default: all)')
+  .option('--channel <c>', 'YouTube channel title or id (required when multiple are connected)')
   .option('--privacy <p>', 'public|unlisted|private', 'public')
   .option('--title <t>', 'override title (single-clip use)')
   .option('--description <d>', 'override description (single-clip use)')
@@ -159,7 +160,7 @@ program.command('upload')
       if (!['public', 'unlisted', 'private'].includes(o.privacy)) throw new Error('--privacy must be public|unlisted|private');
       await runUpload(dir, {
         clips: o.clips, privacy: o.privacy, dryRun: o.dryRun, force: o.force, json: o.json,
-        title: o.title, description: o.description,
+        title: o.title, description: o.description, channel: o.channel,
       });
     } catch (e) { logger.error((e as Error).stack ?? String(e)); process.exit(1); }
   });

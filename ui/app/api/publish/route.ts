@@ -21,6 +21,7 @@ export async function POST(req: NextRequest) {
 
   const args = ['dist/cli/index.js', 'upload', join(WORKSPACE_DIR, 'exports', job),
     '--clips', clip, '--privacy', privacy, '--json', '--force'];
+  if (typeof b.channel === 'string' && b.channel.trim()) args.push('--channel', b.channel.trim());
   if (typeof b.title === 'string' && b.title.trim()) args.push('--title', b.title.trim());
   if (typeof b.description === 'string' && b.description.trim()) args.push('--description', b.description);
 
