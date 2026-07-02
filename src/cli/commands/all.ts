@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import ora from 'ora';
 import Table from 'cli-table3';
 import { parseVideoId, download } from '../../ingest/downloader.js';
+import { isLocalInput, localJobId, ingestLocal } from '../../ingest/localFile.js';
 import { extractMetadata } from '../../ingest/metadataExtractor.js';
 import { getTranscript } from '../../transcript/transcriptManager.js';
 import { detectTriggers } from '../../analysis/transcriptTriggers.js';
@@ -30,6 +31,7 @@ import type { CaptionStyle } from '../../captions/presets.js';
 const WS = process.env.WORKSPACE_DIR ?? './workspace';
 
 export function resolveJobId(url: string): string {
+  if (isLocalInput(url)) return localJobId(url);
   return parseVideoId(url) ?? uuidv4();
 }
 
@@ -88,7 +90,9 @@ export async function analyzeVideo(url: string, opts: AllOpts): Promise<VideoAna
   };
 
   let sp = ora('Ingesting video…').start();
-  const dl = await download(url, dirs.downloads);
+  const dl = isLocalInput(url)
+    ? await ingestLocal(url, dirs.downloads)
+    : await download(url, dirs.downloads);
   const meta = await extractMetadata(dl.videoPath, dl.infoJsonPath, jobId, join(dirs.transcripts, 'metadata.json'));
   sp.succeed(`Downloaded: "${meta.title}" (${Math.round(meta.duration)}s)`);
 

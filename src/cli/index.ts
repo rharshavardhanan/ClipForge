@@ -8,6 +8,7 @@ import { runAll, runBatch } from './commands/all.js';
 import { runIngest } from './commands/ingest.js';
 import { runRankingRender } from './commands/rank.js';
 import { resolveCaptionStyle } from '../captions/presets.js';
+import { isLocalInput } from '../ingest/localFile.js';
 import { logger } from '../utils/logger.js';
 
 const STYLE_HELP = 'caption preset: mrbeast|hormozi|gadzhi|gaming|podcast|cinematic|minimal|card|bold';
@@ -17,6 +18,30 @@ function captionFromFlags(o: { style: string; font?: string; fontSize?: number; 
   return resolveCaptionStyle(o.style, {
     font: o.font, fontSize: o.fontSize, color: o.captionColor, strokeWidth: o.stroke, position: o.position,
   });
+}
+
+/** Render-affecting flags shared by all/batch/process. */
+function addRenderOptions(cmd: Command): Command {
+  return cmd
+    .option('--style <s>', STYLE_HELP, 'bold')
+    .option('--accent <hex>', 'accent color', '#FFD700')
+    .option('--font <name>', 'caption font override: anton|bangers|archivo|montserrat|poppins|inter')
+    .option('--font-size <px>', 'caption font size override', (v) => parseInt(v, 10))
+    .option('--caption-color <hex>', 'caption base color override')
+    .option('--stroke <px>', 'caption stroke width override', (v) => parseInt(v, 10))
+    .option('--position <p>', 'caption position: bottom|center')
+    .option('--no-music', 'disable background music')
+    .option('--music-volume <v>', 'music bed level 0-1 before ducking', (v) => parseFloat(v), 0.25)
+    .option('--music-dir <p>', 'music library folder', process.env.MUSIC_DIR ?? './music')
+    .option('--no-zooms', 'disable punch zooms on emphasized moments');
+}
+
+/** Common option object for runAll/runBatch from parsed flags. */
+function renderOpts(o: any) {
+  return {
+    top: o.top, minScore: o.minScore, style: o.style, accent: o.accent, caption: captionFromFlags(o),
+    music: o.music, musicVolume: o.musicVolume, musicDir: o.musicDir, zooms: o.zooms,
+  };
 }
 
 /** Resolve batch args: if a single `.txt` file is given, read one URL per line; else use the args verbatim. */
@@ -41,28 +66,29 @@ async function preflightOrExit() {
 const program = new Command();
 program.name('clipforge').description('Local-first viral short-form clip engine').version('0.1.0');
 
-program.command('all').argument('<url>', 'YouTube URL')
-  .option('--top <n>', 'max clips to export', (v) => parseInt(v, 10), 3)
-  .option('--min-score <x>', 'absolute composite floor', (v) => parseFloat(v))
-  .option('--style <s>', STYLE_HELP, 'bold')
-  .option('--accent <hex>', 'accent color', '#FFD700')
-  .option('--font <name>', 'caption font override: anton|bangers|archivo|montserrat|poppins|inter')
-  .option('--font-size <px>', 'caption font size override', (v) => parseInt(v, 10))
-  .option('--caption-color <hex>', 'caption base color override')
-  .option('--stroke <px>', 'caption stroke width override', (v) => parseInt(v, 10))
-  .option('--position <p>', 'caption position: bottom|center')
-  .option('--no-music', 'disable background music')
-  .option('--music-volume <v>', 'music bed level 0-1 before ducking', (v) => parseFloat(v), 0.25)
-  .option('--music-dir <p>', 'music library folder', process.env.MUSIC_DIR ?? './music')
-  .option('--no-zooms', 'disable punch zooms on emphasized moments')
-  .action(async (url, o) => {
+addRenderOptions(
+  program.command('all').argument('<input>', 'YouTube URL or local video file')
+    .option('--top <n>', 'max clips to export', (v) => parseInt(v, 10), 3)
+    .option('--min-score <x>', 'absolute composite floor', (v) => parseFloat(v)),
+)
+  .action(async (input, o) => {
     await preflightOrExit();
-    try {
-      await runAll(url, {
-        top: o.top, minScore: o.minScore, style: o.style, accent: o.accent, caption: captionFromFlags(o),
-        music: o.music, musicVolume: o.musicVolume, musicDir: o.musicDir, zooms: o.zooms,
-      });
-    } catch (e) { logger.error((e as Error).stack ?? String(e)); process.exit(1); }
+    try { await runAll(input, renderOpts(o)); }
+    catch (e) { logger.error((e as Error).stack ?? String(e)); process.exit(1); }
+  });
+
+addRenderOptions(
+  program.command('process')
+    .description('Process a LOCAL video file (no download; transcript via whisper)')
+    .argument('<file>', 'path to a local .mp4/.mkv/.mov/.webm/.m4v')
+    .option('--top <n>', 'max clips to export', (v) => parseInt(v, 10), 3)
+    .option('--min-score <x>', 'absolute composite floor', (v) => parseFloat(v)),
+)
+  .action(async (file, o) => {
+    if (!isLocalInput(file)) { logger.error(`Not an existing local video file: ${file}`); process.exit(1); }
+    await preflightOrExit();
+    try { await runAll(file, renderOpts(o)); }
+    catch (e) { logger.error((e as Error).stack ?? String(e)); process.exit(1); }
   });
 
 program.command('ingest').argument('<url>', 'YouTube URL')
@@ -72,34 +98,21 @@ program.command('ingest').argument('<url>', 'YouTube URL')
     catch (e) { logger.error((e as Error).stack ?? String(e)); process.exit(1); }
   });
 
-program.command('batch')
-  .description('Rank the best moments ACROSS multiple videos into one leaderboard')
-  .argument('<urls...>', 'two or more YouTube URLs, or a single .txt file with one URL per line')
-  .option('--top <n>', 'total clips to export across all videos', (v) => parseInt(v, 10), 5)
-  .option('--min-score <x>', 'absolute composite floor', (v) => parseFloat(v))
-  .option('--style <s>', STYLE_HELP, 'bold')
-  .option('--accent <hex>', 'accent color', '#FFD700')
-  .option('--font <name>', 'caption font override: anton|bangers|archivo|montserrat|poppins|inter')
-  .option('--font-size <px>', 'caption font size override', (v) => parseInt(v, 10))
-  .option('--caption-color <hex>', 'caption base color override')
-  .option('--stroke <px>', 'caption stroke width override', (v) => parseInt(v, 10))
-  .option('--position <p>', 'caption position: bottom|center')
-  .option('--per-video-cap <n>', 'max clips from any single video (default: no cap)', (v) => parseInt(v, 10))
-  .option('--ranking', 'also render a #N→#1 countdown ranking video from the exported clips')
-  .option('--no-music', 'disable background music')
-  .option('--music-volume <v>', 'music bed level 0-1 before ducking', (v) => parseFloat(v), 0.25)
-  .option('--music-dir <p>', 'music library folder', process.env.MUSIC_DIR ?? './music')
-  .option('--no-zooms', 'disable punch zooms on emphasized moments')
+addRenderOptions(
+  program.command('batch')
+    .description('Rank the best moments ACROSS multiple videos into one leaderboard')
+    .argument('<inputs...>', 'two or more YouTube URLs / local files, or a single .txt file with one per line')
+    .option('--top <n>', 'total clips to export across all videos', (v) => parseInt(v, 10), 5)
+    .option('--min-score <x>', 'absolute composite floor', (v) => parseFloat(v))
+    .option('--per-video-cap <n>', 'max clips from any single video (default: no cap)', (v) => parseInt(v, 10))
+    .option('--ranking', 'also render a #N→#1 countdown ranking video from the exported clips'),
+)
   .action(async (urls, o) => {
     await preflightOrExit();
     const resolved = resolveBatchUrls(urls);
     if (resolved.length === 0) { logger.error('No URLs provided.'); process.exit(1); }
     try {
-      const exportsDir = await runBatch(resolved, {
-        top: o.top, minScore: o.minScore, style: o.style, accent: o.accent, perVideoCap: o.perVideoCap,
-        caption: captionFromFlags(o),
-        music: o.music, musicVolume: o.musicVolume, musicDir: o.musicDir, zooms: o.zooms,
-      });
+      const exportsDir = await runBatch(resolved, { ...renderOpts(o), perVideoCap: o.perVideoCap });
       if (o.ranking) await runRankingRender(exportsDir, { accent: o.accent, cardSec: 1.5 });
     } catch (e) { logger.error((e as Error).stack ?? String(e)); process.exit(1); }
   });
