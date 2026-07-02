@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildClaudeRequest, buildBatchSchema, parseClaudeBatch } from '../../src/analysis/claudeSemantic.js';
+import { buildClaudeRequest, buildBatchSchema, parseClaudeBatch, isAuthError } from '../../src/analysis/claudeSemantic.js';
 import type { TranscriptChunk } from '../../src/analysis/semantic.js';
 
 const batch: TranscriptChunk[] = [
@@ -38,6 +38,20 @@ describe('buildClaudeRequest', () => {
     expect(req.output_config.format.type).toBe('json_schema');
     // no sampling params — rejected on claude-sonnet-5
     expect(req).not.toHaveProperty('temperature');
+  });
+});
+
+describe('isAuthError', () => {
+  it('flags 401/403 and bad-key messages (not retryable, triggers Gemini fallback)', () => {
+    expect(isAuthError({ status: 401 })).toBe(true);
+    expect(isAuthError({ status: 403 })).toBe(true);
+    expect(isAuthError(new Error('401 {"error":{"type":"authentication_error","message":"invalid x-api-key"}}'))).toBe(true);
+    expect(isAuthError(new Error('permission_error'))).toBe(true);
+  });
+  it('does not flag transient errors (those should still retry)', () => {
+    expect(isAuthError(new Error('429 rate_limit'))).toBe(false);
+    expect(isAuthError(new Error('failed to parse Claude batch JSON'))).toBe(false);
+    expect(isAuthError({ status: 500 })).toBe(false);
   });
 });
 
