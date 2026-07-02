@@ -60,7 +60,7 @@ export async function getAccessToken(fetchFn: typeof fetch = fetch): Promise<str
   if (cached && Date.now() < cached.expiresAt) return cached.token;
   const { id, secret } = requireClient();
   const auth = await loadAuth();
-  if (!auth) throw new Error('Not authenticated with YouTube — run: clipforge auth youtube');
+  if (!auth) throw new Error('Not authenticated with YouTube — run: ./start.sh auth youtube');
   const res = await fetchFn(TOKEN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -71,7 +71,7 @@ export async function getAccessToken(fetchFn: typeof fetch = fetch): Promise<str
   });
   const j: any = await res.json();
   if (!res.ok || !j.access_token) {
-    throw new Error(`YouTube token refresh failed (${j.error ?? res.status}) — run: clipforge auth youtube`);
+    throw new Error(`YouTube token refresh failed (${j.error ?? res.status}) — run: ./start.sh auth youtube`);
   }
   cached = { token: j.access_token, expiresAt: Date.now() + (Number(j.expires_in ?? 3600) - 60) * 1000 };
   return cached.token;

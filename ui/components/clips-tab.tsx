@@ -176,7 +176,7 @@ export function ClipsTab({ jobs, onRefresh }: { jobs: ExportJob[]; onRefresh: ()
               {pub.error && (
                 <p className="break-all text-xs text-red-400">
                   {pub.error}
-                  {/auth|YT_CLIENT/i.test(pub.error) ? ' — set YT_CLIENT_ID/SECRET in .env and run `clipforge auth youtube` in a terminal first.' : ''}
+                  {/auth|YT_CLIENT/i.test(pub.error) ? ' — set YT_CLIENT_ID/SECRET in .env, then run `./start.sh auth youtube` in a terminal.' : ''}
                 </p>
               )}
             </Card>

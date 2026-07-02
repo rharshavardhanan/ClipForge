@@ -38,7 +38,7 @@ describe('getAccessToken', () => {
     _clearTokenCache();
     const fakeFetch = (async () =>
       new Response(JSON.stringify({ error: 'invalid_grant' }), { status: 400 })) as typeof fetch;
-    await expect(getAccessToken(fakeFetch)).rejects.toThrow(/clipforge auth youtube/);
+    await expect(getAccessToken(fakeFetch)).rejects.toThrow(/auth youtube/);
   });
 
   it('errors when no auth file exists', async () => {
