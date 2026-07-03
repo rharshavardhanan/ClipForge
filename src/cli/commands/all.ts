@@ -22,7 +22,6 @@ import { writeSrt } from '../../captions/srtGenerator.js';
 import { extractFullFrame } from '../../extraction/clipExtractor.js';
 import { planFraming } from '../../extraction/faceTracker.js';
 import { planCallouts, faceAt } from '../../extraction/callouts.js';
-import { buildZoomSfxTimes } from '../../sfx/events.js';
 import { render } from '../../captions/remotionRenderer.js';
 import { scanLibrary, pickTrack, sentimentToMood } from '../../music/library.js';
 import { mixMusic } from '../../music/mixer.js';
@@ -33,7 +32,12 @@ import { writeExports } from '../../export/exporter.js';
 import { buildSeoPack, type SeoPack } from '../../export/seo.js';
 import { pickThumbnailTime, generateThumbnail } from '../../export/thumbnail.js';
 import { MODE_PROFILES, resolveMode } from '../../modes.js';
-import { truncateHook } from '../../avss/editPlan.js';
+import { buildEditPlan, buildSourceSignals, truncateHook } from '../../avss/editPlan.js';
+import { regulate } from '../../avss/regulator.js';
+import { generateVariants, scoreVariants, pickWinner, type VariantPins } from '../../avss/variants.js';
+import { defaultPolicy, loadPolicy, type Policy } from '../../avss/policy.js';
+import { extractDna, loadTemplates, type EliteTemplate } from '../../avss/templates.js';
+import type { AvssExport } from '../../export/exporter.js';
 import { acquireBroll } from '../../broll/acquire.js';
 import { filterCallouts } from '../../broll/planner.js';
 import { logger } from '../../utils/logger.js';
@@ -124,6 +128,16 @@ async function pathSizeBytes(p: string): Promise<number> {
 /** PURE: coerce a preset name onto the legacy Remotion style prop (unknown → bold). */
 export function legacyStyle(preset: string): 'minimal' | 'card' | 'bold' {
   return preset === 'minimal' || preset === 'card' ? preset : 'bold';
+}
+
+/** PURE: which AVSS variant dimensions the user's explicit flags freeze. */
+export function buildPins(opts: AllOpts, hasHookText: boolean, sfxAvailable: boolean): VariantPins {
+  return {
+    captionPreset: Boolean(opts.style || opts.caption),
+    zooms: opts.zooms === false,
+    sfx: opts.sfx === false || !sfxAvailable,
+    hook: !hasHookText,
+  };
 }
 
 /** A RankedClip tagged with the VideoAnalysis it came from. */
@@ -265,12 +279,25 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
     ? {}
     : await scanSfxLibrary(opts.sfxDir ?? process.env.SFX_DIR ?? './sfx');
 
+  // AVSS: the learning policy + elite templates steer variant A (exploit); loaded once
+  // per run, entirely fail-soft (cold start = mode defaults, no exploration bias).
+  let policy: Policy = defaultPolicy();
+  let templates: EliteTemplate[] = [];
+  try {
+    policy = await loadPolicy();
+    templates = await loadTemplates();
+  } catch (e) {
+    logger.warn(`avss: policy/templates unavailable — cold start (${e instanceof Error ? e.message : String(e)})`);
+  }
+  if (templates.length > 0) logger.info(`avss: ${templates.length} elite template(s) loaded`);
+
   // Render each clip independently — a single clip that errors or hangs (killed by the render
   // stall-watchdog) is skipped so it can't lose the whole batch. Only clips that fully export
   // go into the manifest.
   const succeeded: SourcedRankedClip[] = [];
   const packs = new Map<string, SeoPack>();
   const brollByClip = new Map<string, BrollSegment[]>();
+  const avssByClip = new Map<string, AvssExport>();
   for (const { clip, source } of selected) {
     const sp2 = ora(`[${clip.clip_id}] (${source.jobId}) extract + caption…`).start();
     const finalPath = join(exportsDir, `${clip.clip_id}_final.mp4`);
@@ -292,7 +319,6 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
       await extractFullFrame(source.videoPath, clip.start, clip.end, fullPath);
       const { mode, track, faces } = await planFraming(fullPath, source.meta.width, source.meta.height);
 
-      const hookText = clip.hook_moment ? hookCardText(clip.hook_moment) : undefined;
       const accentColor = sentimentColor(clip.sentiment, opts.accent);
 
       // Contextual B-roll (narrative overlay): on for mindcuts by default, forced via --broll.
@@ -306,39 +332,72 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
       }) : [];
       if (overlays.length > 0) brollByClip.set(clip.clip_id, overlays);
 
+      // ---- AVSS: base plan → A/B/C variants → regulate → simulate → winner ----
+      // Fail-soft: any error falls back to the regulated base plan (today's behavior).
+      const preset = opts.style ?? profile.captionPreset;
+      const sfxAvailable = Object.keys(sfxLib).length > 0 && opts.sfx !== false;
+      const basePlan = buildEditPlan({
+        profile, captionPreset: preset,
+        hookMoment: clip.hook_moment || undefined, clipTitle: clip.clip_titles[0],
+        words: captionWords,
+        overlays: overlays.map((o) => ({ atSec: o.atSec, durationSec: o.durationSec })),
+        zoomsEnabled: opts.zooms !== false, sfxEnabled: sfxAvailable,
+        sfxVolume: opts.sfxVolume ?? 0.6, musicOn: opts.music !== false,
+      });
+      const signals = buildSourceSignals(clip, captionWords, source.audio, source.semantic);
+      let plan = regulate(basePlan, clip.duration).plan;
+      try {
+        const variants = generateVariants(basePlan, {
+          mode: source.mode, policy, templates,
+          pins: buildPins(opts, Boolean(basePlan.hookText), sfxAvailable),
+          seed: `${source.jobId}_${clip.clip_id}`, words: captionWords, durationSec: clip.duration,
+          hookAlternatives: { moment: clip.hook_moment || undefined, title: clip.clip_titles[0] },
+        });
+        const scored = scoreVariants(variants, signals);
+        const winner = pickWinner(scored);
+        plan = winner.variant.plan;
+        avssByClip.set(clip.clip_id, {
+          winner, all: scored, dna: extractDna(plan, signals, source.mode), policyVersion: policy.version,
+        });
+        logger.info(`[${clip.clip_id}] avss: winner ${winner.variant.id} — predicted retention ${(winner.sim.avgRetention * 100).toFixed(0)}%${winner.variant.changed.length > 0 ? ` (changed: ${winner.variant.changed.join(', ')})` : ''}`);
+      } catch (e) {
+        logger.warn(`[${clip.clip_id}] avss simulation failed — using base plan: ${e instanceof Error ? e.message : String(e)}`);
+      }
+
       // Arrow callouts at the speaker's face on the same peak moments the zooms hit —
-      // suppressed while B-roll covers the face.
-      const callouts = filterCallouts(opts.zooms === false ? [] : planCallouts(
-        buildZoomSfxTimes(captionWords), faces,
+      // suppressed while B-roll covers the face. Rides the WINNER's zoom times.
+      const callouts = filterCallouts(plan.zoom.times.length === 0 ? [] : planCallouts(
+        plan.zoom.times, faces,
         { mode, track, srcW: source.meta.width, srcH: source.meta.height },
       ), overlays);
 
-      // Caption preset: explicit --style wins; otherwise the mode's grammar picks.
-      const preset = opts.style ?? profile.captionPreset;
-      const caption = opts.caption ?? resolveCaptionStyle(preset, opts.captionOverrides ?? {});
+      // Caption preset: explicit --style/--caption pin wins; otherwise the winner plan's.
+      const caption = opts.caption ?? resolveCaptionStyle(plan.captionPreset, opts.captionOverrides ?? {});
 
       await render({
         rawClipPath: fullPath, words: captionWords, outPath: finalPath, fps: source.meta.fps,
-        accentColor, style: legacyStyle(preset), caption, zooms: opts.zooms,
-        zoomIntensity: profile.zoomIntensity,
+        accentColor, style: legacyStyle(plan.captionPreset), caption, zooms: opts.zooms,
+        zoomIntensity: plan.zoom.intensity,
+        zoomTimes: plan.zoom.times,
         framing: mode,
         ...(mode === 'crop' ? { cropTrack: track, srcW: source.meta.width, srcH: source.meta.height } : {}),
         ...(callouts.length > 0 ? { callouts } : {}),
         ...(overlays.length > 0 ? { broll: overlays } : {}),
-        hookText,
+        hookText: plan.hookText,
       });
       if (callouts.length > 0) logger.info(`[${clip.clip_id}] ${callouts.length} arrow callout(s)`);
       logger.info(mode === 'crop'
         ? `[${clip.clip_id}] smart-crop (${track.length} face keyframes)`
         : `[${clip.clip_id}] blur-background framing`);
 
-      // sound design: impact under the hook card + whooshes on the punch-zoom moments
-      const sfxEvents = planSfx(opts.zooms === false ? [] : buildZoomSfxTimes(captionWords), sfxLib, {
-        hasHook: Boolean(hookText), seed: `${source.jobId}_${clip.clip_id}`,
-      });
+      // sound design: impact under the hook card + whooshes on the winner's zoom times
+      // (visuals and sounds share the plan's array by construction).
+      const sfxEvents = plan.sfx.enabled ? planSfx(plan.zoom.times, sfxLib, {
+        hasHook: Boolean(plan.hookText), seed: `${source.jobId}_${clip.clip_id}`,
+      }) : [];
       if (sfxEvents.length) {
         const tmpSfx = finalPath.replace(/\.mp4$/, '.sfx.mp4');
-        await mixSfx(finalPath, sfxEvents, tmpSfx, { sfxVolume: opts.sfxVolume ?? 0.6 });
+        await mixSfx(finalPath, sfxEvents, tmpSfx, { sfxVolume: plan.sfx.volume });
         await rename(tmpSfx, finalPath);
         logger.info(`[${clip.clip_id}] sfx: ${sfxEvents.length} event(s)`);
       }
@@ -398,7 +457,7 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
   if (ranked.length < selected.length) {
     logger.warn(`${selected.length - ranked.length}/${selected.length} clip(s) failed/skipped; manifest has the ${ranked.length} that exported.`);
   }
-  await writeExports(exportsDir, id, primary.url, primary.meta, ranked, packs, brollByClip);
+  await writeExports(exportsDir, id, primary.url, primary.meta, ranked, packs, brollByClip, avssByClip);
 
   const head = analyses.length === 1 ? ['Rank', 'Score', 'Dur', 'Excerpt'] : ['Rank', 'Score', 'Dur', 'Source', 'Excerpt'];
   const table = new Table({ head });

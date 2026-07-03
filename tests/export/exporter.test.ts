@@ -160,5 +160,10 @@ describe('AVSS exports (v7)', () => {
     const j2 = JSON.parse(await readFile(join(dir, 'clip_002.json'), 'utf8'));
     expect('avss' in j2).toBe(false);
     await expect(readFile(join(dir, 'clip_002_attention_graph.json'), 'utf8')).rejects.toThrow();
+
+    // the GUI reads predicted retention from the manifest
+    const manifest = JSON.parse(await readFile(join(dir, 'clips_manifest.json'), 'utf8'));
+    expect(manifest.clips[0].predicted_retention).toBeCloseTo(0.975);
+    expect('predicted_retention' in manifest.clips[1]).toBe(false);
   });
 });

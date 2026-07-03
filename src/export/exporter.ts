@@ -95,14 +95,20 @@ export function buildClipJson(
   };
 }
 
-export function buildManifest(jobId: string, source: string, meta: VideoMetadata, clips: RankedClip[]) {
+export function buildManifest(
+  jobId: string, source: string, meta: VideoMetadata, clips: RankedClip[],
+  avssByClip?: Map<string, AvssExport>,
+) {
   const scores = clips.map((c) => c.composite_score);
   return {
     job_id: jobId, source, title: meta.title, processed_at: new Date().toISOString(),
     total_duration: meta.duration, clips_generated: clips.length,
     top_score: scores.length ? Math.max(...scores) : 0,
     avg_score: scores.length ? +(scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(2) : 0,
-    clips,
+    clips: clips.map((c) => {
+      const a = avssByClip?.get(c.clip_id);
+      return a ? { ...c, predicted_retention: +a.winner.sim.avgRetention.toFixed(4) } : c;
+    }),
   };
 }
 
@@ -132,5 +138,5 @@ export async function writeExports(
       JSON.stringify(buildClipJson(clip, jobId, files, pack, brollByClip?.get(clip.clip_id), avss), null, 2));
   }
   await writeFile(join(dir, 'broll_manifest.json'), JSON.stringify(buildBrollManifest(clips, brollByClip), null, 2));
-  await writeFile(join(dir, 'clips_manifest.json'), JSON.stringify(buildManifest(jobId, source, meta, clips), null, 2));
+  await writeFile(join(dir, 'clips_manifest.json'), JSON.stringify(buildManifest(jobId, source, meta, clips, avssByClip), null, 2));
 }

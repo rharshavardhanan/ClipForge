@@ -64,6 +64,7 @@ node dist/cli/index.js ui        # → http://localhost:3210
 | `batch <inputs...>` | Analyze N videos, rank the best moments **across all of them**, export the global top-N. Accepts URLs, file paths, or one `.txt` with one input per line |
 | `rank <exportsDir>` | Render `ranking_final.mp4` (#N→#1 countdown) from an existing export dir |
 | `rankrot <topic>` | **RankRot**: topic → internet clip harvest → AI ranking → brainrot Top-N countdown Short |
+| `stats [dirs...]` | **AVSS RL loop**: pull real YouTube metrics for uploaded clips → update the editing policy → promote ≥70% retention edits to `./elite_templates/` |
 | `ui` | Launch the local GUI (Import / Clips / Style / Rank / RankRot / Export tabs) |
 
 ### Shared options (`all`, `process`, `batch`)
@@ -108,6 +109,18 @@ Two editing grammars; `--mode auto` (default) picks one per video from the title
 | Punch zooms | full punch | subtle (~half amplitude) |
 | Caption default | `mrbeast` | `podcast` |
 | Contextual B-roll | off by default | **on by default** (up to 4 overlays/clip) |
+
+---
+
+## AVSS — Autonomous Viral Selection System (v7)
+
+Every clip's edit is **tested before it is rendered**. The pipeline builds an explicit edit plan (hook, caption preset, zoom times/intensity, SFX, B-roll windows), generates three variants, and scores each against a deterministic **audience simulator** — attention curve, dopamine spikes, swipe hazard, retention survival curve, rewatch likelihood. Only the winner is rendered (one render per clip, always).
+
+- **Variants** explore only hook text, caption preset (within the mode's family), zoom timing/intensity, and SFX — never framing, B-roll, or music. Explicit flags pin their dimension (`--style` freezes the preset, `--no-zooms` freezes zooms off).
+- **Consistency regulator** clamps every variant: ≤2 zooms per 10s (min 2.5s apart), ≤40% B-roll coverage, ≤8-word hooks, intensity within [0.3, 1.3] — exploration can never produce a chaotic edit.
+- **Editing policy** (`workspace/policy/policy.json`) is a per-mode epsilon-greedy bandit (90% exploit / 10% explore) over those dimensions, updated only by **real** performance.
+- **The learning loop:** upload clips → wait for views → `clipforge stats`. It pulls views/likes/comments (Data API) and retention/completion/shares (Analytics API — re-run `auth youtube` once to grant the `yt-analytics.readonly` scope on older tokens), computes the reward (0.35 retention + 0.20 completion + 0.20 rewatch + 0.10 likes + 0.10 comments + 0.05 shares — Shorts looping past 100% avg-view counts as rewatch), updates the policy, and saves the **edit DNA** of any short with ≥70% real retention to `./elite_templates/elite_template_vN.json`. Future runs seed variant A from the best matching template.
+- Snapshots are append-only history in `workspace/performance/<videoId>.json`; predicted retention shows as a badge on each clip in the GUI.
 
 ## Contextual B-roll (narrative overlay)
 
@@ -248,6 +261,11 @@ All outputs land in `workspace/exports/<jobId>/` (batches: `workspace/exports/ba
 | `clip_NNN_description.txt` | SEO description: hook line, source credit, hashtag block |
 | `clip_NNN_hashtags.txt` | Full hashtag set (creator + viral + sentiment + niche), one per line |
 | `clip_NNN_hook.txt` | Uppercase hook text (matches the burned-in hook card) |
+| `clip_NNN_attention_graph.json` | AVSS: predicted attention curve (0.5s ticks) + dopamine spike events |
+| `clip_NNN_retention_prediction.json` | AVSS: predicted retention survival curve, average, completion, drop-off points |
+| `clip_NNN_swipe_risk.json` | AVSS: per-tick swipe hazard + top risk moments |
+| `clip_NNN_rewatch_score.json` | AVSS: rewatch likelihood + factor breakdown |
+| `clip_NNN_edit_variant_scores.json` | AVSS: all 3 edit variants (changed dims, regulator violations, predicted metrics, winner) |
 | `clips_manifest.json` | Job-level summary (batches record each clip's source video) |
 | `broll_manifest.json` | Per-clip narrative-overlay placements: entity, query, source URL, cached file, timing |
 | `ranking_final.mp4` | #N→#1 countdown video (`--ranking` or `rank` command) |

@@ -18,6 +18,8 @@ export interface ClipInfo {
   sentiment?: string;
   sourceVideo?: string;
   duration: number;
+  /** AVSS-predicted average retention (0-1) of the winning edit variant. */
+  predictedRetention?: number;
   files: { final: string; raw: string; srt: string; json: string };
 }
 
@@ -70,6 +72,7 @@ export async function listExports(): Promise<ExportJob[]> {
           sentiment: c.sentiment,
           sourceVideo: c.source_video,
           duration: c.duration ?? 0,
+          predictedRetention: c.predicted_retention,
           files: {
             final: `${c.clip_id}_final.mp4`,
             raw: `${c.clip_id}_raw.mp4`,
