@@ -97,7 +97,7 @@ function desiredWindowForBox(
 
 /**
  * Smooths a (possibly sparse/gappy) sequence of face samples into a per-sample
- * sequence of 9:16 crop windows: zero-lag (forward-backward) smoothed and
+ * sequence of crop windows (aspect, default 9:16): zero-lag (forward-backward) smoothed and
  * clamped to the source frame, with zoom hysteresis to kill breathing.
  * PURE — no I/O.
  */
@@ -106,6 +106,7 @@ export function smoothTrack(
   srcW: number,
   srcH: number,
   alpha = 0.15,
+  aspect = 9 / 16,
 ): CropKeyframe[] {
   if (samples.length === 0) return [];
   if (samples.every((s) => s.box === null)) return [];
@@ -139,13 +140,13 @@ export function smoothTrack(
   return samples.map((s, i) => {
     return {
       time: s.time,
-      ...clampCropWindow(smoothedCx[i], smoothedCy[i], smoothedCropH[i], srcW, srcH),
+      ...clampCropWindow(smoothedCx[i], smoothedCy[i], smoothedCropH[i], srcW, srcH, aspect),
     };
   });
 }
 
 /**
- * Builds a 9:16 crop track from an active-speaker box series (MS2). For each
+ * Builds a crop track (aspect, default 9:16) from an active-speaker box series (MS2). For each
  * sample, computes a desired crop window from its box using the same
  * geometry as `smoothTrack` (gap-filling null boxes by holding the last
  * known box). When the active speaker switches — detected as a large jump
@@ -159,6 +160,7 @@ export function buildActiveSpeakerTrack(
   srcW: number,
   srcH: number,
   alpha = 0.15,
+  aspect = 9 / 16,
 ): CropKeyframe[] {
   if (active.length === 0) return [];
   if (active.every((s) => s.box === null)) return [];
@@ -221,7 +223,7 @@ export function buildActiveSpeakerTrack(
 
   return active.map((s, i) => ({
     time: s.time,
-    ...clampCropWindow(smoothedCx[i], smoothedCy[i], smoothedCropH[i], srcW, srcH),
+    ...clampCropWindow(smoothedCx[i], smoothedCy[i], smoothedCropH[i], srcW, srcH, aspect),
   }));
 }
 
@@ -229,19 +231,20 @@ function clamp(v: number, lo: number, hi: number): number {
   return Math.min(Math.max(v, lo), hi);
 }
 
-/** Builds a 9:16 crop window from a center + height, clamped fully inside [0,srcW]x[0,srcH]. */
+/** Builds a crop window (default 9:16) from a center + height, clamped fully inside the source. */
 function clampCropWindow(
   cx: number,
   cy: number,
   cropH: number,
   srcW: number,
   srcH: number,
+  aspect = 9 / 16,
 ): { cx: number; cy: number; cropW: number; cropH: number } {
   let h = clamp(cropH, 1, srcH);
-  let w = (h * 9) / 16;
+  let w = h * aspect;
   if (w > srcW) {
     w = srcW;
-    h = clamp((w * 16) / 9, 1, srcH);
+    h = clamp(w / aspect, 1, srcH);
   }
 
   const x = clamp(cx - w / 2, 0, srcW - w);
@@ -273,6 +276,7 @@ export async function detectFaceTrack(
   srcH: number,
   fps = 3,
   maxSec?: number,
+  aspect = 9 / 16,
 ): Promise<CropKeyframe[]> {
   const frames = await detectFrameObs(videoPath, srcW, srcH, fps, maxSec);
   if (frames.length === 0) return [];
@@ -283,17 +287,17 @@ export async function detectFaceTrack(
 
   if (tracks.length === 1) {
     const samples: FaceSample[] = tracks[0].samples.map((s) => ({ time: s.time, box: s.box }));
-    return smoothTrack(samples, srcW, srcH);
+    return smoothTrack(samples, srcW, srcH, 0.15, aspect);
   }
 
   const active = pickActiveSpeaker(frames, tracks);
-  return buildActiveSpeakerTrack(active, srcW, srcH);
+  return buildActiveSpeakerTrack(active, srcW, srcH, 0.15, aspect);
 }
 
-/** PURE: a single centered full-height 9:16 crop keyframe — the no-face fallback
+/** PURE: a single centered full-height crop keyframe (aspect, default 9:16) — the no-face fallback
  *  for forced full-screen framing (a constant window; reframe holds it). */
-export function centerCropTrack(srcW: number, srcH: number, time = 0): CropKeyframe[] {
-  return [{ time, ...clampCropWindow(srcW / 2, srcH / 2, srcH, srcW, srcH) }];
+export function centerCropTrack(srcW: number, srcH: number, time = 0, aspect = 9 / 16): CropKeyframe[] {
+  return [{ time, ...clampCropWindow(srcW / 2, srcH / 2, srcH, srcW, srcH, aspect) }];
 }
 
 /** PURE: cut-aware single-face smoothing — smooth INSIDE each shot, snap at cuts.
@@ -303,15 +307,16 @@ export function smoothTrackSegmented(
   cuts: number[],
   srcW: number,
   srcH: number,
+  aspect = 9 / 16,
 ): CropKeyframe[] {
-  if (cuts.length === 0) return smoothTrack(samples, srcW, srcH);
+  if (cuts.length === 0) return smoothTrack(samples, srcW, srcH, 0.15, aspect);
   const out: CropKeyframe[] = [];
-  for (const seg of segmentByCuts(samples, cuts)) out.push(...smoothTrack(seg, srcW, srcH));
+  for (const seg of segmentByCuts(samples, cuts)) out.push(...smoothTrack(seg, srcW, srcH, 0.15, aspect));
   return out;
 }
 
 /**
- * PURE: best-available full-screen 9:16 crop track when the user FORCES crop framing.
+ * PURE: best-available full-screen crop track (aspect, default 9:16) when the user FORCES crop framing.
  * Frames are segmented at scene cuts and each shot is handled independently
  * (face tracks must not survive a layout change):
  *  - 2+ people in the shot → follow the active speaker (eased switches)
@@ -324,19 +329,20 @@ export function forcedCropTrack(
   cuts: number[],
   srcW: number,
   srcH: number,
+  aspect = 9 / 16,
 ): CropKeyframe[] {
   const out: CropKeyframe[] = [];
   for (const seg of segmentByCuts(frames, cuts)) {
     const tracks = associateTracks(seg, srcW * TRACK_ASSOCIATION_DIST_FRACTION);
     let track: CropKeyframe[] = [];
     if (tracks.length >= 2) {
-      track = buildActiveSpeakerTrack(pickActiveSpeaker(seg, tracks), srcW, srcH);
+      track = buildActiveSpeakerTrack(pickActiveSpeaker(seg, tracks), srcW, srcH, 0.15, aspect);
     } else if (tracks.length === 1) {
-      track = smoothTrack(tracks[0].samples.map((s) => ({ time: s.time, box: s.box })), srcW, srcH);
+      track = smoothTrack(tracks[0].samples.map((s) => ({ time: s.time, box: s.box })), srcW, srcH, 0.15, aspect);
     }
-    out.push(...(track.length > 0 ? track : centerCropTrack(srcW, srcH, seg[0].time)));
+    out.push(...(track.length > 0 ? track : centerCropTrack(srcW, srcH, seg[0].time, aspect)));
   }
-  return out.length > 0 ? out : centerCropTrack(srcW, srcH);
+  return out.length > 0 ? out : centerCropTrack(srcW, srcH, 0, aspect);
 }
 
 /**
@@ -353,6 +359,7 @@ export async function planFraming(
   srcH: number,
   fps = 3,
   force?: FramingMode,
+  aspect = 9 / 16,
 ): Promise<{ mode: FramingMode; track: CropKeyframe[]; faces: FaceSample[] }> {
   const frames = await detectFrameObs(videoPath, srcW, srcH, fps);
   const tracks = frames.length > 0 ? associateTracks(frames, srcW * TRACK_ASSOCIATION_DIST_FRACTION) : [];
@@ -363,7 +370,7 @@ export async function planFraming(
 
   if (force === 'crop') {
     const cuts = await detectSceneCuts(videoPath);
-    return { mode: 'crop', track: forcedCropTrack(frames, cuts, srcW, srcH), faces };
+    return { mode: 'crop', track: forcedCropTrack(frames, cuts, srcW, srcH, aspect), faces };
   }
   if (force === 'blur' || frames.length === 0) return { mode: 'blur', track: [], faces };
 
@@ -372,7 +379,7 @@ export async function planFraming(
 
   if (mode === 'crop' && dominant) {
     const cuts = await detectSceneCuts(videoPath);
-    const track = smoothTrackSegmented(faces, cuts, srcW, srcH);
+    const track = smoothTrackSegmented(faces, cuts, srcW, srcH, aspect);
     if (track.length > 0) return { mode: 'crop', track, faces };
   }
   return { mode: 'blur', track: [], faces };
