@@ -63,7 +63,8 @@ node dist/cli/index.js ui        # → http://localhost:3210
 | `ingest <url>` | Download + transcript only (pre-cache / debugging) |
 | `batch <inputs...>` | Analyze N videos, rank the best moments **across all of them**, export the global top-N. Accepts URLs, file paths, or one `.txt` with one input per line |
 | `rank <exportsDir>` | Render `ranking_final.mp4` (#N→#1 countdown) from an existing export dir |
-| `ui` | Launch the local GUI (Import / Clips / Style / Rank / Export tabs) |
+| `rankrot <topic>` | **RankRot**: topic → internet clip harvest → AI ranking → brainrot Top-N countdown Short |
+| `ui` | Launch the local GUI (Import / Clips / Style / Rank / RankRot / Export tabs) |
 
 ### Shared options (`all`, `process`, `batch`)
 
@@ -124,6 +125,35 @@ Placements are recorded in `broll_manifest.json` and each clip's `clip.json`. Re
 LLM key (Claude primary, Gemini fallback) — without one, clips render without B-roll.
 
 ---
+
+## RankRot — ranking editor (brainrot countdowns)
+
+```bash
+clipforge rankrot "best basketball dunks"          # Top 5 by default
+clipforge rankrot "craziest fails" --top 7 --harvest 40
+```
+
+Give it a **topic**, get a ready-to-post countdown Short. The engine:
+
+1. expands the topic into ~5 search variations (Gemini Flash; template fallback) and
+   searches YouTube via yt-dlp (only platform with a search extractor — TikTok/IG deferred)
+2. harvests up to 40 source clips into `./rankrot_cache/` (cached across runs)
+3. isolates each clip's **strongest 3–8s** by fusing a motion curve (ffmpeg `signalstats`
+   inter-frame difference) with a 0.5s loudness curve — peak lands ~⅓ into the window
+4. ranks through five layers → `0.35·visual + 0.20·audio + 0.20·reaction + 0.15·virality
+   + 0.10·novelty` (reaction = face presence/growth; virality = one Gemini Flash batch,
+   view-count fallback; novelty = frame aHash + title overlap, duplicates collapsed).
+   **No Claude in this engine** (by spec).
+5. renders the countdown **#5→#1, never reversed**: rank stinger cards, persistent left
+   rank rail that fills as ranks play, multi-color brainrot top title +
+   *"(last one is insane)"*, per-clip meme micro-captions ("BRO GOT COOKED"), camera-shake
+   + punch-in on every clip, **slow-mo replay** on the 2 strongest, blur-backdrop framing
+   for horizontal sources, and SFX (whoosh/impact/riser on #1 card/bass on #1 reveal)
+6. writes `ranking_final.mp4`, `title.txt`, `description.txt`, `hashtags.txt`,
+   `thumbnail.png` (#1's peak frame), and `rankrot_manifest.json` (full audit: queries,
+   layer scores, picked moments) to `workspace/exports/rankrot_<topic>/`
+
+GUI: the **RankRot** tab takes the topic, streams the run log, and plays the result.
 
 ## Music library
 

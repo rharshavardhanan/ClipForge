@@ -81,8 +81,8 @@ export type ContentMode = 'clippies' | 'mindcuts';
 export type BrollKind = 'person' | 'place' | 'company' | 'object' | 'action' | 'emotion' | 'concept' | 'event';
 /** One LLM-extracted B-roll opportunity; times are clip-relative seconds. */
 export interface BrollCue { start: number; end: number; entity: string; kind: BrollKind; query: string; }
-/** One YouTube search result considered as B-roll source material. */
-export interface BrollCandidate { id: string; url: string; title: string; channel?: string; durationSec: number; }
+/** One YouTube search result considered as B-roll / RankRot source material. */
+export interface BrollCandidate { id: string; url: string; title: string; channel?: string; durationSec: number; viewCount?: number; }
 /** A downloaded B-roll asset placed on the clip timeline (narrative overlay window). */
 export interface BrollSegment {
   file: string;               // absolute path of the cached segment

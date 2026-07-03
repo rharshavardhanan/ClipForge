@@ -8,6 +8,7 @@ import { ImportTab } from '@/components/import-tab';
 import { ClipsTab } from '@/components/clips-tab';
 import { StyleTab, type StyleConfig, DEFAULT_STYLE_CONFIG } from '@/components/style-tab';
 import { RankTab } from '@/components/rank-tab';
+import { RankRotTab } from '@/components/rankrot-tab';
 import { ExportTab } from '@/components/export-tab';
 
 const NAV = [
@@ -15,6 +16,7 @@ const NAV = [
   { id: 'Clips', label: 'Clips', sub: 'Preview and download your exports', icon: 'clips' },
   { id: 'Style', label: 'Style', sub: 'Caption presets, fonts, music, motion', icon: 'style' },
   { id: 'Rank', label: 'Rank', sub: 'Build #N → #1 countdown videos', icon: 'rank' },
+  { id: 'RankRot', label: 'RankRot', sub: 'Topic → internet Top-5 brainrot Short', icon: 'rank' },
   { id: 'Export', label: 'Export', sub: 'Manage exported files on disk', icon: 'export' },
 ] as const;
 
@@ -118,6 +120,7 @@ export default function Home() {
           <Tabs.Content value="Clips" forceMount className="animate-fade-up outline-none data-[state=inactive]:hidden"><ClipsTab jobs={jobs} onRefresh={refreshJobs} /></Tabs.Content>
           <Tabs.Content value="Style" forceMount className="animate-fade-up outline-none data-[state=inactive]:hidden"><StyleTab style={style} onChange={setStyle} previewSrc={previewSrc} /></Tabs.Content>
           <Tabs.Content value="Rank" forceMount className="animate-fade-up outline-none data-[state=inactive]:hidden"><RankTab jobs={jobs} accent={style.accent} onFinished={refreshJobs} /></Tabs.Content>
+          <Tabs.Content value="RankRot" forceMount className="animate-fade-up outline-none data-[state=inactive]:hidden"><RankRotTab accent={style.accent} /></Tabs.Content>
           <Tabs.Content value="Export" forceMount className="animate-fade-up outline-none data-[state=inactive]:hidden"><ExportTab jobs={jobs} onChanged={refreshJobs} /></Tabs.Content>
         </main>
       </div>
