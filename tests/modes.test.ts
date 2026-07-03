@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { MODE_PROFILES, detectMode, resolveMode, meanSubscores } from '../src/modes.js';
+import { MODE_PROFILES, detectMode, resolveMode, meanSubscores, resolveFraming } from '../src/modes.js';
 import type { SemanticWindow, VideoMetadata } from '../src/types/index.js';
 
 function meta(over: Partial<VideoMetadata> = {}): VideoMetadata {
@@ -69,5 +69,19 @@ describe('meanSubscores', () => {
     const wins = [sw({ humor: 10, surprise: 0 }), sw({ humor: 0, surprise: 10 })];
     expect(meanSubscores(wins, ['humor', 'surprise'])).toBe(5);
     expect(meanSubscores([], ['humor'])).toBe(0);
+  });
+});
+
+describe('resolveFraming', () => {
+  it('explicit flag always wins', () => {
+    expect(resolveFraming('blur', MODE_PROFILES.clippies)).toBe('blur');
+    expect(resolveFraming('crop', MODE_PROFILES.mindcuts)).toBe('crop');
+  });
+  it('clippies defaults to full-screen crop', () => {
+    expect(resolveFraming('auto', MODE_PROFILES.clippies)).toBe('crop');
+    expect(resolveFraming(undefined, MODE_PROFILES.clippies)).toBe('crop');
+  });
+  it('mindcuts keeps the auto decision', () => {
+    expect(resolveFraming('auto', MODE_PROFILES.mindcuts)).toBeUndefined();
   });
 });
