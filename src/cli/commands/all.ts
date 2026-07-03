@@ -77,6 +77,9 @@ export interface AllOpts {
   captionOverrides?: CaptionOverrides;
   /** Content mode: 'clippies' | 'mindcuts' | 'auto'/undefined = detect per video. */
   mode?: string;
+  /** Framing: 'crop' = force full-screen 9:16 (active-speaker/face-tracked, center fallback),
+   *  'blur' = force 16:9 over blurred backdrop, 'auto'/undefined = per-clip decision. */
+  framing?: string;
   /** Contextual B-roll (narrative overlay): true = force on, false = off,
    *  undefined = the mode's default (on for mindcuts). */
   broll?: boolean;
@@ -317,7 +320,8 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
       // 'blur' centers it over a blurred backdrop. Blur is the default (natural, no face cutting).
       const fullPath = join(clipsDir, `${clip.clip_id}_full.mp4`);
       await extractFullFrame(source.videoPath, clip.start, clip.end, fullPath);
-      const { mode, track, faces } = await planFraming(fullPath, source.meta.width, source.meta.height);
+      const { mode, track, faces } = await planFraming(fullPath, source.meta.width, source.meta.height, 3,
+        opts.framing === 'crop' || opts.framing === 'blur' ? opts.framing : undefined);
 
       const accentColor = sentimentColor(clip.sentiment, opts.accent);
 

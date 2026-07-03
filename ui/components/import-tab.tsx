@@ -10,6 +10,7 @@ export function ImportTab({ style, onFinished }: { style: StyleConfig; onFinishe
   const [inputsText, setInputsText] = useState('');
   const [top, setTop] = useState(3);
   const [mode, setMode] = useState('auto');
+  const [framing, setFraming] = useState('auto');
   const [broll, setBroll] = useState('auto');
   const [ranking, setRanking] = useState(false);
   const [deleteSource, setDeleteSource] = useState(false);
@@ -46,6 +47,7 @@ export function ImportTab({ style, onFinished }: { style: StyleConfig; onFinishe
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           inputs, top, mode,
+          framing: framing === 'auto' ? undefined : framing,
           broll: broll === 'auto' ? undefined : broll === 'on',
           style: style.preset, accent: style.accent, music: style.music, zooms: style.zooms,
           font: style.font, fontSize: style.fontSize, position: style.position,
@@ -115,6 +117,14 @@ export function ImportTab({ style, onFinished }: { style: StyleConfig; onFinishe
               <option value="auto">Auto-detect</option>
               <option value="clippies">Clippies — high-energy</option>
               <option value="mindcuts">MindCuts — story-first</option>
+            </select>
+          </Field>
+
+          <Field label="Framing" hint="Full-screen or blurred bars">
+            <select value={framing} onChange={(e) => setFraming(e.target.value)} className={inputCls}>
+              <option value="auto">Auto per clip</option>
+              <option value="crop">Full-screen 9:16 — follows the speaker</option>
+              <option value="blur">Blurred backdrop (16:9 kept whole)</option>
             </select>
           </Field>
 

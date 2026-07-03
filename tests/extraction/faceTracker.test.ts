@@ -340,3 +340,58 @@ describe('detectFaceTrack (integration, gated)', () => {
     120_000,
   );
 });
+
+describe('forced full-screen crop (--framing crop)', () => {
+  it('centerCropTrack: one centered 9:16 keyframe using full source height', async () => {
+    const { centerCropTrack } = await import('../../src/extraction/faceTracker.js');
+    const track = centerCropTrack(SRC_W, SRC_H);
+    expect(track).toHaveLength(1);
+    expect(track[0].cropH).toBe(SRC_H);
+    expect(track[0].cropW).toBeCloseTo((SRC_H * 9) / 16);
+    expect(track[0].cx).toBe(SRC_W / 2);
+    expect(track[0].cy).toBe(SRC_H / 2);
+  });
+
+  it('forcedCropTrack: no tracks → center crop fallback', async () => {
+    const { forcedCropTrack } = await import('../../src/extraction/faceTracker.js');
+    const track = forcedCropTrack([], [], SRC_W, SRC_H);
+    expect(track).toHaveLength(1);
+    expect(track[0].cx).toBe(SRC_W / 2);
+  });
+
+  it('forcedCropTrack: single track follows the face', async () => {
+    const { forcedCropTrack } = await import('../../src/extraction/faceTracker.js');
+    const box = { x: 1200, y: 300, w: 200, h: 220 };
+    const tracks = [{ id: 0, samples: [
+      { time: 0, box, mouthOpenness: 0.1 },
+      { time: 0.33, box, mouthOpenness: 0.1 },
+    ] }];
+    const track = forcedCropTrack([], tracks, SRC_W, SRC_H);
+    expect(track.length).toBeGreaterThan(0);
+    // crop centers near the face, not the frame center
+    expect(Math.abs(track[0].cx - 1300)).toBeLessThan(200);
+  });
+
+  it('forcedCropTrack: two tracks → active-speaker crop (never empty, inside frame)', async () => {
+    const { forcedCropTrack } = await import('../../src/extraction/faceTracker.js');
+    const a = { x: 200, y: 300, w: 200, h: 220 };
+    const b = { x: 1400, y: 300, w: 200, h: 220 };
+    const frames = [0, 0.33, 0.66].map((time) => ({
+      time,
+      faces: [
+        { box: a, mouthOpenness: time < 0.5 ? 0.6 : 0.05 },
+        { box: b, mouthOpenness: time < 0.5 ? 0.05 : 0.6 },
+      ],
+    }));
+    const tracks = [
+      { id: 0, samples: frames.map((f) => ({ time: f.time, box: a, mouthOpenness: f.faces[0].mouthOpenness })) },
+      { id: 1, samples: frames.map((f) => ({ time: f.time, box: b, mouthOpenness: f.faces[1].mouthOpenness })) },
+    ];
+    const track = forcedCropTrack(frames, tracks, SRC_W, SRC_H);
+    expect(track.length).toBeGreaterThan(0);
+    for (const k of track) {
+      expect(k.cx - k.cropW / 2).toBeGreaterThanOrEqual(0);
+      expect(k.cx + k.cropW / 2).toBeLessThanOrEqual(SRC_W);
+    }
+  });
+});
