@@ -212,7 +212,9 @@ describe('detectFrameObs (integration, gated)', () => {
     async () => {
       let frames: FrameObs[] = [];
       try {
-        frames = await detectFrameObs(videoPath, 1920, 1080, 1);
+        // Only the first 20s — enough to prove detection works; the full 6-min video
+        // took ~2min of WASM detection and flaked on loaded machines.
+        frames = await detectFrameObs(videoPath, 1920, 1080, 1, 20);
       } catch (err) {
         // detector/model unavailable in this environment — treat as skip, not failure
         console.warn('detectFrameObs unavailable, skipping assertion:', err);
@@ -220,6 +222,7 @@ describe('detectFrameObs (integration, gated)', () => {
       }
       expect(Array.isArray(frames)).toBe(true);
     },
-    120_000,
+    // Needs ~2min alone; concurrent renders (ffmpeg at full tilt) can double that.
+    300_000,
   );
 });

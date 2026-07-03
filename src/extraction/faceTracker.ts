@@ -4,7 +4,8 @@ import { join } from 'node:path';
 import { run } from '../utils/cmd.js';
 import { mouthOpenness, associateTracks, pickActiveSpeaker } from './activeSpeaker.js';
 import { summarizeFraming, chooseFramingMode, type FramingMode } from './framing.js';
-import type { ActiveSample, CropKeyframe, FaceBox, FaceSample, FrameObs, Track } from '../types/index.js';
+import { detectSceneCuts, segmentByCuts } from './sceneCuts.js';
+import type { ActiveSample, CropKeyframe, FaceBox, FaceSample, FrameObs } from '../types/index.js';
 
 const MIN_CROP_H_FRACTION = 0.2; // floor for cropH as a fraction of srcH, avoids degenerate tiny windows
 const MAX_CROP_H_FRACTION = 0.9; // ceiling for cropH as a fraction of srcH, avoids ever showing the full wide shot
@@ -70,15 +71,24 @@ export function applyZoomHysteresis(cropH: number[], deadband = 0.06): number[] 
   return result;
 }
 
-/** Raw (unsmoothed) crop window {cx, cy, cropH} for a single face box, using the shared geometry. */
+/** Raw (unsmoothed) crop window {cx, cy, cropH} for a single face box, using the shared geometry.
+ *  Edge-aware: when the face sits near the top/bottom of the source, a large window CANNOT
+ *  hold it at the upper-third position (the frame clamp would pin the face to the window's
+ *  edge — the "ceiling shot" bug). Shrink cropH so the upper-third placement actually fits. */
 function desiredWindowForBox(
   box: FaceBox,
   minCropH: number,
   maxCropH: number,
+  srcH: number,
 ): { cx: number; cy: number; cropH: number } {
   const cx = box.x + box.w / 2;
   const faceCenterY = box.y + box.h / 2;
-  const cropH = clamp(box.h / FACE_HEIGHT_FRACTION, minCropH, maxCropH);
+  // Largest window that keeps the face at FACE_VERTICAL_POSITION fully inside the frame:
+  //   bottom: faceCenterY + (1 - POS)·cropH <= srcH ;  top: faceCenterY - POS·cropH >= 0
+  const bottomLimit = (srcH - faceCenterY) / (1 - FACE_VERTICAL_POSITION);
+  const topLimit = faceCenterY / FACE_VERTICAL_POSITION;
+  const fitH = Math.min(box.h / FACE_HEIGHT_FRACTION, bottomLimit, topLimit);
+  const cropH = clamp(fitH, minCropH, maxCropH);
   // Position the face in the upper third: crop center sits below the face
   // center by (0.5 - FACE_VERTICAL_POSITION) * cropH.
   const cy = faceCenterY + (0.5 - FACE_VERTICAL_POSITION) * cropH;
@@ -117,7 +127,7 @@ export function smoothTrack(
   const maxCropH = srcH * MAX_CROP_H_FRACTION;
 
   // Desired (raw, unsmoothed) crop window per sample.
-  const desired = filled.map((box) => desiredWindowForBox(box, minCropH, maxCropH));
+  const desired = filled.map((box) => desiredWindowForBox(box, minCropH, maxCropH, srcH));
 
   const smoothedCx = smoothSeriesBidirectional(desired.map((d) => d.cx), alpha);
   const smoothedCy = smoothSeriesBidirectional(desired.map((d) => d.cy), alpha);
@@ -168,7 +178,7 @@ export function buildActiveSpeakerTrack(
   const minCropH = srcH * MIN_CROP_H_FRACTION;
   const maxCropH = srcH * MAX_CROP_H_FRACTION;
 
-  const desired = filled.map((box) => desiredWindowForBox(box, minCropH, maxCropH));
+  const desired = filled.map((box) => desiredWindowForBox(box, minCropH, maxCropH, srcH));
 
   // Detect speaker-switch jumps and ease the transition across ~0.5s of
   // samples instead of snapping straight to the new speaker's window.
@@ -262,8 +272,9 @@ export async function detectFaceTrack(
   srcW: number,
   srcH: number,
   fps = 3,
+  maxSec?: number,
 ): Promise<CropKeyframe[]> {
-  const frames = await detectFrameObs(videoPath, srcW, srcH, fps);
+  const frames = await detectFrameObs(videoPath, srcW, srcH, fps, maxSec);
   if (frames.length === 0) return [];
   if (frames.every((f) => f.faces.length === 0)) return [];
 
@@ -281,30 +292,51 @@ export async function detectFaceTrack(
 
 /** PURE: a single centered full-height 9:16 crop keyframe — the no-face fallback
  *  for forced full-screen framing (a constant window; reframe holds it). */
-export function centerCropTrack(srcW: number, srcH: number): CropKeyframe[] {
-  return [{ time: 0, ...clampCropWindow(srcW / 2, srcH / 2, srcH, srcW, srcH) }];
+export function centerCropTrack(srcW: number, srcH: number, time = 0): CropKeyframe[] {
+  return [{ time, ...clampCropWindow(srcW / 2, srcH / 2, srcH, srcW, srcH) }];
+}
+
+/** PURE: cut-aware single-face smoothing — smooth INSIDE each shot, snap at cuts.
+ *  Smoothing across a hard cut drags the window through no-man's land. */
+export function smoothTrackSegmented(
+  samples: FaceSample[],
+  cuts: number[],
+  srcW: number,
+  srcH: number,
+): CropKeyframe[] {
+  if (cuts.length === 0) return smoothTrack(samples, srcW, srcH);
+  const out: CropKeyframe[] = [];
+  for (const seg of segmentByCuts(samples, cuts)) out.push(...smoothTrack(seg, srcW, srcH));
+  return out;
 }
 
 /**
- * PURE: best-available full-screen 9:16 crop track when the user FORCES crop framing:
- *  - 2+ people → follow the active speaker (eased switches — context follows the talker)
- *  - 1 person  → smooth face track
- *  - no faces  → centered full-height crop
+ * PURE: best-available full-screen 9:16 crop track when the user FORCES crop framing.
+ * Frames are segmented at scene cuts and each shot is handled independently
+ * (face tracks must not survive a layout change):
+ *  - 2+ people in the shot → follow the active speaker (eased switches)
+ *  - 1 person → smooth face track
+ *  - no faces → centered full-height crop for that shot
  * Never returns an empty track, so forced crop can never fall back to blur.
  */
 export function forcedCropTrack(
   frames: FrameObs[],
-  tracks: Track[],
+  cuts: number[],
   srcW: number,
   srcH: number,
 ): CropKeyframe[] {
-  let track: CropKeyframe[] = [];
-  if (tracks.length >= 2) {
-    track = buildActiveSpeakerTrack(pickActiveSpeaker(frames, tracks), srcW, srcH);
-  } else if (tracks.length === 1) {
-    track = smoothTrack(tracks[0].samples.map((s) => ({ time: s.time, box: s.box })), srcW, srcH);
+  const out: CropKeyframe[] = [];
+  for (const seg of segmentByCuts(frames, cuts)) {
+    const tracks = associateTracks(seg, srcW * TRACK_ASSOCIATION_DIST_FRACTION);
+    let track: CropKeyframe[] = [];
+    if (tracks.length >= 2) {
+      track = buildActiveSpeakerTrack(pickActiveSpeaker(seg, tracks), srcW, srcH);
+    } else if (tracks.length === 1) {
+      track = smoothTrack(tracks[0].samples.map((s) => ({ time: s.time, box: s.box })), srcW, srcH);
+    }
+    out.push(...(track.length > 0 ? track : centerCropTrack(srcW, srcH, seg[0].time)));
   }
-  return track.length > 0 ? track : centerCropTrack(srcW, srcH);
+  return out.length > 0 ? out : centerCropTrack(srcW, srcH);
 }
 
 /**
@@ -329,14 +361,18 @@ export async function planFraming(
   const dominant = tracks.length > 0 ? [...tracks].sort((a, b) => b.samples.length - a.samples.length)[0] : null;
   const faces: FaceSample[] = dominant ? dominant.samples.map((s) => ({ time: s.time, box: s.box })) : [];
 
-  if (force === 'crop') return { mode: 'crop', track: forcedCropTrack(frames, tracks, srcW, srcH), faces };
+  if (force === 'crop') {
+    const cuts = await detectSceneCuts(videoPath);
+    return { mode: 'crop', track: forcedCropTrack(frames, cuts, srcW, srcH), faces };
+  }
   if (force === 'blur' || frames.length === 0) return { mode: 'blur', track: [], faces };
 
   const signal = summarizeFraming(tracks, frames.length, srcW, srcH);
   const mode = chooseFramingMode(signal);
 
   if (mode === 'crop' && dominant) {
-    const track = smoothTrack(faces, srcW, srcH);
+    const cuts = await detectSceneCuts(videoPath);
+    const track = smoothTrackSegmented(faces, cuts, srcW, srcH);
     if (track.length > 0) return { mode: 'crop', track, faces };
   }
   return { mode: 'blur', track: [], faces };
@@ -354,12 +390,14 @@ export async function detectFrameObs(
   srcW: number,
   srcH: number,
   fps = 3,
+  maxSec?: number,
 ): Promise<FrameObs[]> {
   const dir = await mkdtemp(join(tmpdir(), 'clipforge-frameobs-'));
   try {
     await mkdir(dir, { recursive: true });
     await run('ffmpeg', [
       '-y', '-i', videoPath,
+      ...(maxSec !== undefined ? ['-t', String(maxSec)] : []),
       '-vf', `fps=${fps}`,
       join(dir, 'f_%04d.png'),
     ]);
