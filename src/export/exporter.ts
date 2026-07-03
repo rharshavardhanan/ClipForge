@@ -1,4 +1,4 @@
-import type { BrollSegment, RankedClip, VideoMetadata } from '../types/index.js';
+import type { ArcComponents, BrollSegment, RankedClip, VideoMetadata } from '../types/index.js';
 import { writeFile, mkdir } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { buildSeoPack, writeSeoFiles, type SeoPack } from './seo.js';
@@ -71,12 +71,27 @@ export function buildBrollManifest(clips: RankedClip[], brollByClip?: Map<string
   return out;
 }
 
+/** Micro-story arc block (v7) written into clip.json / the manifest per clip. */
+export interface ArcExport {
+  complete: boolean;
+  missing: string[];
+  arcScore: number;
+  synopsis: string;
+  reactionAfterPeak: boolean;
+  components: ArcComponents;
+  provider: string;
+}
+
+/** One 6/6-gate rejection surfaced in the manifest (mirror of the CLI table). */
+export interface ArcRejectionExport { clip_id: string; start: number; end: number; missing: string[]; reason: string; }
+
 export function buildClipJson(
   clip: RankedClip, jobId: string,
   files: { final: string; raw: string; srt: string; thumbnail?: string },
   seo?: SeoPack,
   broll?: BrollSegment[],
   avss?: AvssExport,
+  arc?: ArcExport,
 ) {
   return {
     clip_id: clip.clip_id, rank: clip.rank, source_video: clip.source_video ?? jobId,
@@ -91,6 +106,7 @@ export function buildClipJson(
     transcript_excerpt: clip.transcript_excerpt, seo,
     ...(broll && broll.length > 0 ? { broll: buildBrollEntries(broll) } : {}),
     ...(avss ? { avss: buildAvssBlock(avss) } : {}),
+    ...(arc ? { arc } : {}),
     files,
   };
 }
@@ -98,6 +114,8 @@ export function buildClipJson(
 export function buildManifest(
   jobId: string, source: string, meta: VideoMetadata, clips: RankedClip[],
   avssByClip?: Map<string, AvssExport>,
+  arcByClip?: Map<string, ArcExport>,
+  arcRejections?: ArcRejectionExport[],
 ) {
   const scores = clips.map((c) => c.composite_score);
   return {
@@ -107,8 +125,14 @@ export function buildManifest(
     avg_score: scores.length ? +(scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(2) : 0,
     clips: clips.map((c) => {
       const a = avssByClip?.get(c.clip_id);
-      return a ? { ...c, predicted_retention: +a.winner.sim.avgRetention.toFixed(4) } : c;
+      const arc = arcByClip?.get(c.clip_id);
+      return {
+        ...c,
+        ...(a ? { predicted_retention: +a.winner.sim.avgRetention.toFixed(4) } : {}),
+        ...(arc ? { arc_complete: arc.complete } : {}),
+      };
     }),
+    arc_rejections: arcRejections ?? [],
   };
 }
 
@@ -117,6 +141,8 @@ export async function writeExports(
   packs?: Map<string, SeoPack>,
   brollByClip?: Map<string, BrollSegment[]>,
   avssByClip?: Map<string, AvssExport>,
+  arcByClip?: Map<string, ArcExport>,
+  arcRejections?: ArcRejectionExport[],
 ): Promise<void> {
   await mkdir(dir, { recursive: true });
   for (const clip of clips) {
@@ -135,8 +161,9 @@ export async function writeExports(
       }
     }
     await writeFile(join(dir, `${clip.clip_id}.json`),
-      JSON.stringify(buildClipJson(clip, jobId, files, pack, brollByClip?.get(clip.clip_id), avss), null, 2));
+      JSON.stringify(buildClipJson(clip, jobId, files, pack, brollByClip?.get(clip.clip_id), avss, arcByClip?.get(clip.clip_id)), null, 2));
   }
   await writeFile(join(dir, 'broll_manifest.json'), JSON.stringify(buildBrollManifest(clips, brollByClip), null, 2));
-  await writeFile(join(dir, 'clips_manifest.json'), JSON.stringify(buildManifest(jobId, source, meta, clips, avssByClip), null, 2));
+  await writeFile(join(dir, 'clips_manifest.json'),
+    JSON.stringify(buildManifest(jobId, source, meta, clips, avssByClip, arcByClip, arcRejections), null, 2));
 }

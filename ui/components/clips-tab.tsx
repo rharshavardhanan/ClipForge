@@ -121,6 +121,7 @@ export function ClipsTab({ jobs, onRefresh }: { jobs: ExportJob[]; onRefresh: ()
                       <Badge>{Math.round(c.duration)}s</Badge>
                       {c.sentiment && <Badge tone={sentimentTone(c.sentiment)}>{c.sentiment}</Badge>}
                       {c.predictedRetention !== undefined && <Badge>~{Math.round(c.predictedRetention * 100)}% ret</Badge>}
+                      {c.arcComplete !== undefined && <Badge tone={c.arcComplete ? 'green' : 'amber'}>{c.arcComplete ? 'story ✓' : 'partial'}</Badge>}
                     </div>
                     {c.title && <p className="text-sm font-semibold leading-snug text-zinc-100">{c.title}</p>}
                     {c.hook && <p className="line-clamp-2 text-xs italic text-zinc-400">“{c.hook}”</p>}

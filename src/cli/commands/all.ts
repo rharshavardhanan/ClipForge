@@ -44,7 +44,7 @@ import { regulate } from '../../avss/regulator.js';
 import { generateVariants, scoreVariants, pickWinner, type VariantPins } from '../../avss/variants.js';
 import { defaultPolicy, loadPolicy, type Policy } from '../../avss/policy.js';
 import { extractDna, loadTemplates, type EliteTemplate } from '../../avss/templates.js';
-import type { AvssExport } from '../../export/exporter.js';
+import type { ArcExport, AvssExport } from '../../export/exporter.js';
 import { acquireBroll } from '../../broll/acquire.js';
 import { filterCallouts } from '../../broll/planner.js';
 import { logger } from '../../utils/logger.js';
@@ -611,7 +611,21 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
   if (ranked.length < selected.length) {
     logger.warn(`${selected.length - ranked.length}/${selected.length} clip(s) failed/skipped; manifest has the ${ranked.length} that exported.`);
   }
-  await writeExports(exportsDir, id, primary.url, primary.meta, ranked, packs, brollByClip, avssByClip);
+  // v7: per-clip arc block (gate status + refined label) for clip.json + the manifest.
+  const arcByClip = new Map<string, ArcExport>();
+  for (const clip of ranked) {
+    const status = arcStatus.get(clip.clip_id);
+    if (!status) continue;
+    arcByClip.set(clip.clip_id, {
+      complete: status.complete, missing: status.missing,
+      arcScore: clip.arc ? +arcScore(clip.arc).toFixed(4) : 0,
+      synopsis: clip.arc?.synopsis ?? '',
+      reactionAfterPeak: clip.arc?.reactionAfterPeak ?? false,
+      components: clip.arc?.components ?? {},
+      provider,
+    });
+  }
+  await writeExports(exportsDir, id, primary.url, primary.meta, ranked, packs, brollByClip, avssByClip, arcByClip, arcRejections);
 
   const head = analyses.length === 1 ? ['Rank', 'Score', 'Dur', 'Excerpt'] : ['Rank', 'Score', 'Dur', 'Source', 'Excerpt'];
   const table = new Table({ head });
