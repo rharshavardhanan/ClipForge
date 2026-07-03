@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { run } from '../utils/cmd.js';
 import { mouthOpenness, associateTracks, pickActiveSpeaker } from './activeSpeaker.js';
 import { summarizeFraming, chooseFramingMode, type FramingMode } from './framing.js';
-import type { ActiveSample, CropKeyframe, FaceBox, FaceSample, FrameObs } from '../types/index.js';
+import type { ActiveSample, CropKeyframe, FaceBox, FaceSample, FrameObs, Track } from '../types/index.js';
 
 const MIN_CROP_H_FRACTION = 0.2; // floor for cropH as a fraction of srcH, avoids degenerate tiny windows
 const MAX_CROP_H_FRACTION = 0.9; // ceiling for cropH as a fraction of srcH, avoids ever showing the full wide shot
@@ -279,28 +279,61 @@ export async function detectFaceTrack(
   return buildActiveSpeakerTrack(active, srcW, srcH);
 }
 
+/** PURE: a single centered full-height 9:16 crop keyframe — the no-face fallback
+ *  for forced full-screen framing (a constant window; reframe holds it). */
+export function centerCropTrack(srcW: number, srcH: number): CropKeyframe[] {
+  return [{ time: 0, ...clampCropWindow(srcW / 2, srcH / 2, srcH, srcW, srcH) }];
+}
+
+/**
+ * PURE: best-available full-screen 9:16 crop track when the user FORCES crop framing:
+ *  - 2+ people → follow the active speaker (eased switches — context follows the talker)
+ *  - 1 person  → smooth face track
+ *  - no faces  → centered full-height crop
+ * Never returns an empty track, so forced crop can never fall back to blur.
+ */
+export function forcedCropTrack(
+  frames: FrameObs[],
+  tracks: Track[],
+  srcW: number,
+  srcH: number,
+): CropKeyframe[] {
+  let track: CropKeyframe[] = [];
+  if (tracks.length >= 2) {
+    track = buildActiveSpeakerTrack(pickActiveSpeaker(frames, tracks), srcW, srcH);
+  } else if (tracks.length === 1) {
+    track = smoothTrack(tracks[0].samples.map((s) => ({ time: s.time, box: s.box })), srcW, srcH);
+  }
+  return track.length > 0 ? track : centerCropTrack(srcW, srcH);
+}
+
 /**
  * Decide the base framing for a clip and, only when smart-crop is warranted, build the
  * crop-track. Blur-background is the default (natural, no face cutting); a single stable
  * close-up dominant face earns 'crop'; two-or-more people stay in blur. This is the
  * framing decision engine wired to real detections — see src/extraction/framing.ts.
+ * `force` (--framing flag) overrides the auto decision: 'crop' always produces a
+ * full-screen track (active-speaker → single-face → center fallback), 'blur' never crops.
  */
 export async function planFraming(
   videoPath: string,
   srcW: number,
   srcH: number,
   fps = 3,
+  force?: FramingMode,
 ): Promise<{ mode: FramingMode; track: CropKeyframe[]; faces: FaceSample[] }> {
   const frames = await detectFrameObs(videoPath, srcW, srcH, fps);
-  if (frames.length === 0) return { mode: 'blur', track: [], faces: [] };
-
-  const tracks = associateTracks(frames, srcW * TRACK_ASSOCIATION_DIST_FRACTION);
-  const signal = summarizeFraming(tracks, frames.length, srcW, srcH);
-  const mode = chooseFramingMode(signal);
+  const tracks = frames.length > 0 ? associateTracks(frames, srcW * TRACK_ASSOCIATION_DIST_FRACTION) : [];
 
   // Dominant face samples power the arrow callouts (and thumbnail zoom) in BOTH modes.
   const dominant = tracks.length > 0 ? [...tracks].sort((a, b) => b.samples.length - a.samples.length)[0] : null;
   const faces: FaceSample[] = dominant ? dominant.samples.map((s) => ({ time: s.time, box: s.box })) : [];
+
+  if (force === 'crop') return { mode: 'crop', track: forcedCropTrack(frames, tracks, srcW, srcH), faces };
+  if (force === 'blur' || frames.length === 0) return { mode: 'blur', track: [], faces };
+
+  const signal = summarizeFraming(tracks, frames.length, srcW, srcH);
+  const mode = chooseFramingMode(signal);
 
   if (mode === 'crop' && dominant) {
     const track = smoothTrack(faces, srcW, srcH);

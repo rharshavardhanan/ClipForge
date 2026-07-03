@@ -20,6 +20,7 @@ const STYLE_HELP = 'caption preset: mrbeast|hormozi|gadzhi|gaming|podcast|cinema
 function addRenderOptions(cmd: Command): Command {
   return cmd
     .option('--mode <m>', 'content mode: auto|clippies|mindcuts (auto = detect per video)', 'auto')
+    .option('--framing <f>', 'framing: auto|crop|blur — crop = FULL-SCREEN 9:16 (follows the active speaker, no blur bars), blur = 16:9 over blurred backdrop', 'auto')
     .option('--style <s>', STYLE_HELP)
     .option('--accent <hex>', 'accent color', '#FFD700')
     .option('--font <name>', 'caption font override: anton|bangers|archivo|montserrat|poppins|inter')
@@ -48,8 +49,12 @@ function renderOpts(o: any) {
     logger.error(`--mode must be auto|clippies|mindcuts (got "${o.mode}")`);
     process.exit(1);
   }
+  if (o.framing && !['auto', 'crop', 'blur'].includes(o.framing)) {
+    logger.error(`--framing must be auto|crop|blur (got "${o.framing}")`);
+    process.exit(1);
+  }
   return {
-    top: o.top, minScore: o.minScore, style: o.style, accent: o.accent,
+    top: o.top, minScore: o.minScore, style: o.style, accent: o.accent, framing: o.framing,
     // Caption style resolves inside the pipeline (explicit --style wins, else the mode preset);
     // the fine-tuning flags ride along as overrides.
     captionOverrides: { font: o.font, fontSize: o.fontSize, color: o.captionColor, strokeWidth: o.stroke, position: o.position },

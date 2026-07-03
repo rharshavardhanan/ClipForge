@@ -16,6 +16,7 @@ export async function POST(req: NextRequest) {
   if (Number.isFinite(top) && top > 0) args.push('--top', String(Math.min(20, Math.round(top))));
   // v6 content mode + contextual B-roll (tri-state: on / off / mode default)
   if (body.mode === 'clippies' || body.mode === 'mindcuts') args.push('--mode', body.mode);
+  if (body.framing === 'crop' || body.framing === 'blur') args.push('--framing', body.framing);
   if (body.broll === true) args.push('--broll');
   if (body.broll === false) args.push('--no-broll');
   if (PRESETS.has(body.style)) args.push('--style', body.style);

@@ -73,6 +73,8 @@ node dist/cli/index.js ui        # → http://localhost:3210
 --top <n>              max clips to export             (all/process: 3, batch: 5)
 --min-score <x>        absolute composite floor        (default: auto)
 --mode <m>             auto | clippies | mindcuts      (default: auto-detect per video)
+--framing <f>          auto | crop | blur              (crop = FULL-SCREEN 9:16, follows the
+                       active speaker, center-crop when no face; blur = 16:9 over blurred bars)
 --broll                force contextual B-roll (narrative overlay) on
 --no-broll             disable contextual B-roll       (default: on for mindcuts)
 --broll-dir <p>        B-roll cache folder             (default: ./broll_cache)
