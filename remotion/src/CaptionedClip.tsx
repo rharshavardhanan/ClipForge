@@ -18,6 +18,9 @@ export type ClipProps = {
   zooms?: boolean;
   /** Punch-zoom amplitude multiplier (1 = full punch; mindcuts ~0.55 = subtle). */
   zoomIntensity?: number;
+  /** Zoom event times (sec) computed in node — shares one array with the SFX whooshes.
+   *  Absent → internal buildZoomEvents(words) fallback. */
+  zoomTimes?: number[];
   /** 'blur' = original video centered over a blurred backdrop (default, natural, no face cutting).
    *  'crop' = smart face-crop pan/zoom via cropTrack. */
   framing?: 'blur' | 'crop';
@@ -28,12 +31,12 @@ export type ClipProps = {
 };
 
 export const CaptionedClip: React.FC<ClipProps> = ({
-  videoPath, words, accentColor, showHookCard, hookText, cropTrack, srcW, srcH, caption, zooms, zoomIntensity, framing, callouts, broll,
+  videoPath, words, accentColor, showHookCard, hookText, cropTrack, srcW, srcH, caption, zooms, zoomIntensity, zoomTimes, framing, callouts, broll,
 }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const t = frame / fps;
-  const punchScale = zooms === false ? 1 : punchScaleAt(buildZoomEvents(words), t, zoomIntensity ?? 1);
+  const punchScale = zooms === false ? 1 : punchScaleAt(zoomTimes ?? buildZoomEvents(words), t, zoomIntensity ?? 1);
   const src = staticFile(videoPath);
 
   // Default to blur unless a crop track is explicitly supplied.

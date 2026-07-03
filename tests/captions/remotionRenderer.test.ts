@@ -64,6 +64,11 @@ describe('buildProps', () => {
     expect(buildProps({ ...baseOpts, zooms: false }, 10, 'input/x.mp4').zooms).toBe(false);
   });
 
+  it('passes node-computed zoom times through, absent when not provided', () => {
+    expect(buildProps({ ...baseOpts, zoomTimes: [2.5, 6] }, 10, 'input/x.mp4').zoomTimes).toEqual([2.5, 6]);
+    expect(buildProps(baseOpts, 10, 'input/x.mp4').zoomTimes).toBeUndefined();
+  });
+
   it('carries the framing mode through (blur default via undefined, crop when set)', () => {
     expect(buildProps({ ...baseOpts, framing: 'crop' }, 10, 'input/x.mp4').framing).toBe('crop');
     expect(buildProps({ ...baseOpts, framing: 'blur' }, 10, 'input/x.mp4').framing).toBe('blur');

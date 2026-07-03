@@ -66,6 +66,9 @@ export interface ClipCompositionProps {
   zooms?: boolean;
   /** Punch-zoom amplitude multiplier (v6 modes: clippies 1, mindcuts ~0.55). */
   zoomIntensity?: number;
+  /** Zoom event times (sec), computed once in node (AVSS) — absent falls back to the
+   *  composition's internal buildZoomEvents(words). */
+  zoomTimes?: number[];
   /** Base framing: 'blur' (default) or 'crop' (smart face-crop via cropTrack). */
   framing?: 'blur' | 'crop';
   /** Arrow callouts at the speaker's face on peak moments — mirrors remotion/src/Callout.tsx. */
