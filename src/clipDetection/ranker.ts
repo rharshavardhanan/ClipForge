@@ -1,4 +1,13 @@
-import type { ClipCandidate, RankedClip, SemanticScores, SemanticWindow, TranscriptSegment, WindowScore } from '../types/index.js';
+import type { ArcLabel, ClipCandidate, RankedClip, SemanticScores, SemanticWindow, TranscriptSegment, WindowScore } from '../types/index.js';
+import { arcScore } from '../analysis/arcTypes.js';
+
+/** PURE: v7 spec §5 — for ARC-LABELED candidates, story completeness joins the
+ *  composite at weight 0.25 (renormalized). Unlabeled candidates keep their raw
+ *  composite so no-LLM runs behave exactly as before; the 6/6 gate — not this
+ *  weighting — is what keeps incomplete stories from exporting. */
+export function arcWeightedComposite(composite: number, arc?: ArcLabel): number {
+  return arc ? 0.75 * composite + 0.25 * (10 * arcScore(arc)) : composite;
+}
 
 export function defaultMinScore(windows: WindowScore[]): number {
   if (!windows.length) return 0;
@@ -58,7 +67,7 @@ export function rank(
     .filter((c) => c.composite >= min)
     .map((cand) => {
       const sw = semantic.length > 0 ? findOverlappingSemantic(cand.start, cand.end, semantic) : null;
-      return { cand, sw, adjusted: cand.composite + priorityBoost(sw, opts.priorities) };
+      return { cand, sw, adjusted: arcWeightedComposite(cand.composite, cand.arc) + priorityBoost(sw, opts.priorities) };
     })
     .sort((a, b) => b.adjusted - a.adjusted);
 
@@ -78,7 +87,8 @@ export function rank(
       rank: i + 1,
       clip_id: `clip_${String(i + 1).padStart(3, '0')}`,
       start: cand.start, end: cand.end, duration,
-      composite_score: +cand.composite.toFixed(2),
+      composite_score: +arcWeightedComposite(cand.composite, cand.arc).toFixed(2),
+      ...(cand.arc ? { arc: cand.arc } : {}),
       semantic_score: sw ? +sw.semantic_score.toFixed(2) : 0, audio_score: +cand.audioScore.toFixed(2), visual_score: 0,
       trigger_score: +cand.triggerScore.toFixed(2), pacing_score: 0, metadata_score: +(cand.commentScore ?? 0).toFixed(2),
       hook_moment: sw ? sw.hook_moment : '', clip_titles: sw ? sw.clip_titles : [],
