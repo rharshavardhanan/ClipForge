@@ -14,6 +14,11 @@ import type { ContentMode } from '../types/index.js';
 
 export type ZoomBucket = 'tight' | 'sparse';   // tight: minGap 2.5/max 4 — sparse: minGap 4/max 2
 
+/** PURE: the zoom-time builder options a bucket stands for (fed to buildZoomSfxTimes). */
+export function zoomOptsFor(bucket: ZoomBucket): { minGapSec: number; maxEvents: number } {
+  return bucket === 'tight' ? { minGapSec: 2.5, maxEvents: 4 } : { minGapSec: 4, maxEvents: 2 };
+}
+
 export interface PolicyChoice {
   captionPreset?: string;
   hookSource?: 'moment' | 'title';
