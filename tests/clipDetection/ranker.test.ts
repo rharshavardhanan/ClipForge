@@ -176,3 +176,49 @@ describe('priorityBoost (v6 modes)', () => {
     expect(neutral[0].start).toBe(100);           // without priorities, raw composite wins
   });
 });
+
+// ---- v7 arc weighting -------------------------------------------------------------------
+import { arcWeightedComposite } from '../../src/clipDetection/ranker.js';
+import type { ArcLabel } from '../../src/types/index.js';
+
+const fullComponents = {
+  setup: { start: 0, end: 4 }, trigger: { start: 3, end: 4 },
+  escalation: { start: 4, end: 8 }, peak: { start: 8, end: 10 },
+  payoff: { start: 10, end: 13 }, reaction: { start: 13, end: 16 },
+};
+
+describe('arcWeightedComposite', () => {
+  it('no arc → raw composite unchanged (no-LLM runs behave exactly as today)', () => {
+    expect(arcWeightedComposite(8)).toBe(8);
+  });
+  it('full-confidence arc → 0.75×composite + 0.25×10', () => {
+    const arc: ArcLabel = { synopsis: 's', confidence: 1, components: fullComponents };
+    expect(arcWeightedComposite(8, arc)).toBeCloseTo(0.75 * 8 + 0.25 * 10);
+  });
+});
+
+describe('rank with arcs', () => {
+  it('an arc-labeled candidate outranks an equal-composite bare candidate and carries arc onto RankedClip', () => {
+    const arc: ArcLabel = { synopsis: 'story', confidence: 1, components: fullComponents, reactionAfterPeak: true };
+    const cands: ClipCandidate[] = [
+      { start: 0, end: 30, composite: 8, triggerScore: 6, audioScore: 4, arc },
+      { start: 30, end: 62, composite: 8, triggerScore: 6, audioScore: 4 },
+    ];
+    const r = rank(cands, segs, { top: 2, minScore: 0 });
+    expect(r[0].start).toBe(0);
+    expect(r[0].arc?.synopsis).toBe('story');
+    expect(r[0].composite_score).toBeCloseTo(0.75 * 8 + 0.25 * 10, 1);
+    expect(r[1].arc).toBeUndefined();
+    expect(r[1].composite_score).toBe(8);
+  });
+  it('min-score filter still uses the RAW composite', () => {
+    // raw 6 passes min 5.5 even though a weak arc drags the effective score to ~4.5
+    const weakArc: ArcLabel = { synopsis: 'w', confidence: 0, components: fullComponents };
+    const cands: ClipCandidate[] = [
+      { start: 0, end: 30, composite: 6, triggerScore: 6, audioScore: 4, arc: weakArc },
+    ];
+    const r = rank(cands, segs, { top: 1, minScore: 5.5 });
+    expect(r).toHaveLength(1);
+    expect(r[0].composite_score).toBeCloseTo(4.5);
+  });
+});
