@@ -14,7 +14,14 @@ import { analyzeAudio } from '../../analysis/audioEnergy.js';
 import { analyzeSemanticAuto, pickSemanticProvider } from '../../analysis/semanticEngine.js';
 import { scoreWindows } from '../../clipDetection/windowScorer.js';
 import { buildClips } from '../../clipDetection/merger.js';
-import { rank, defaultMinScore } from '../../clipDetection/ranker.js';
+import { rank, defaultMinScore, arcWeightedComposite } from '../../clipDetection/ranker.js';
+import { motionLayer } from '../../analysis/motion.js';
+import { chunkTranscript } from '../../analysis/arcChunker.js';
+import { mineArcs, mergeMinedCandidates } from '../../analysis/arcMiner.js';
+import { buildEvidenceBlock } from '../../analysis/arcEvidence.js';
+import { extractKeyframes, keyframeTimes, peakTime } from '../../analysis/keyframes.js';
+import { completeArc, gateArc, resolveBounds, type ArcCompletion } from '../../analysis/arcCompleter.js';
+import { arcScore } from '../../analysis/arcTypes.js';
 import { loadUsedRanges, appendUsedRanges, filterUsedCandidates } from '../../clipDetection/usedRanges.js';
 import { buildCaptionWords } from '../../captions/captionWords.js';
 import { sentimentColor } from '../../captions/sentimentColor.js';
@@ -41,7 +48,7 @@ import type { AvssExport } from '../../export/exporter.js';
 import { acquireBroll } from '../../broll/acquire.js';
 import { filterCallouts } from '../../broll/planner.js';
 import { logger } from '../../utils/logger.js';
-import type { BrollSegment, RankedClip, TranscriptSegment, VideoAnalysis } from '../../types/index.js';
+import type { ArcLabel, AudioEnergyLayer, BrollSegment, RankedClip, TranscriptSegment, VideoAnalysis } from '../../types/index.js';
 import { resolveCaptionStyle, type CaptionOverrides, type CaptionStyle } from '../../captions/presets.js';
 
 const WS = process.env.WORKSPACE_DIR ?? './workspace';
@@ -99,6 +106,10 @@ export interface AllOpts {
   deleteSource?: boolean;
   /** Allow re-exporting moments already used by previous runs of the same video. Default false. */
   allowRepeats?: boolean;
+  /** Candidates given the arc completion + 6/6 story gate pass (min = top). Default 8. */
+  arcTopk?: number;
+  /** Export clips that fail the 6/6 story gate, labeled arc.complete=false. Default false. */
+  lenient?: boolean;
 }
 
 /** PURE: files/dirs to remove when --delete-source is set — the big source download and the
@@ -202,7 +213,32 @@ export async function analyzeVideo(url: string, opts: AllOpts): Promise<VideoAna
   const candidates = buildClips(windows, segments, audio, threshold, meta.duration, profile.lengths);
   sp.succeed(`Found ${candidates.length} candidates${boosts.length ? ` (${boosts.length} viewer-flagged moments)` : ''}`);
 
-  return { jobId, url, videoPath: dl.videoPath, meta, segments, triggers, audio, semantic, candidates, mode: profile.name };
+  // v7 arc engine (recall pass): mine complete micro-stories the scorer never surfaces.
+  // Fail-soft — mining errors leave the scorer candidates untouched. No LLM → engine off.
+  let arcCandidates = candidates;
+  let motion: { time: number; v: number }[] = [];
+  if (chosen !== 'none') {
+    sp = ora('Mining micro-story arcs…').start();
+    try {
+      motion = await motionLayer(dl.videoPath, join(dirs.analysis, 'layer_motion.json'));
+      const arcs = await mineArcs(
+        chunkTranscript(segments),
+        (c) => buildEvidenceBlock({
+          window: { start: c.start, end: c.end },
+          rms: toCurve(audio), motion, silences: audio.silence_regions,
+        }),
+        { cachePath: join(dirs.analysis, `layer_arcs_${chosen}.json`), durationSec: meta.duration, mode: profile.name },
+      );
+      arcCandidates = mergeMinedCandidates(candidates, arcs);
+      sp.succeed(`arcs: ${arcs.length} mined, ${arcCandidates.length} candidates total`);
+    } catch (e) {
+      sp.warn(`arc mining unavailable (${e instanceof Error ? e.message : String(e)}) — scorer candidates only`);
+    }
+  } else {
+    logger.warn('arc engine OFF — no LLM provider (SEMANTIC_PROVIDER/keys); story gate disabled, pipeline runs as before');
+  }
+
+  return { jobId, url, videoPath: dl.videoPath, meta, segments, triggers, audio, semantic, candidates: arcCandidates, mode: profile.name, motion };
 }
 
 /**
@@ -240,6 +276,48 @@ export function rankAcrossAnalyses(
   }));
 }
 
+// ---- v7 arc engine: completion-stage pure helpers -----------------------------------------
+
+export interface ArcRejection { clip_id: string; start: number; end: number; missing: string[]; reason: string; }
+export interface ArcStatus { complete: boolean; missing: string[]; }
+
+/** PURE: adapt the audio layer's rms curve to generic {time,v} points. */
+export function toCurve(audio: AudioEnergyLayer): { time: number; v: number }[] {
+  return audio.rms_curve.map((p) => ({ time: p.time, v: p.rms }));
+}
+
+/** PURE: widen a span by pad seconds, clamped into [0, max]. */
+export function padSpan(span: { start: number; end: number }, pad: number, max: number): { start: number; end: number } {
+  return { start: Math.max(0, span.start - pad), end: Math.min(max, span.end + pad) };
+}
+
+/** PURE: invert arcWeightedComposite to recover the raw scorer composite
+ *  (2dp rounding on composite_score tolerated — error ≤0.01/0.75). */
+export function rawComposite(clip: RankedClip): number {
+  return clip.arc ? (clip.composite_score - 2.5 * arcScore(clip.arc)) / 0.75 : clip.composite_score;
+}
+
+/** PURE: apply a completion's label + resolved bounds to a clip and re-score it. */
+export function applyCompletionToClip(
+  clip: RankedClip, completion: ArcCompletion, bounds: { start: number; end: number },
+): RankedClip {
+  const label: ArcLabel = {
+    synopsis: completion.synopsis, confidence: completion.confidence,
+    components: completion.components, reactionAfterPeak: completion.reactionAfterPeak,
+  };
+  return {
+    ...clip,
+    start: bounds.start, end: bounds.end, duration: +(bounds.end - bounds.start).toFixed(2),
+    arc: label,
+    composite_score: +arcWeightedComposite(rawComposite(clip), label).toFixed(2),
+  };
+}
+
+/** PURE: one row of the gate-rejection report. */
+export function arcRejectionRow(clip: RankedClip, missing: string[], reason: string): ArcRejection {
+  return { clip_id: clip.clip_id, start: clip.start, end: clip.end, missing, reason };
+}
+
 /**
  * Rank candidates from one or more VideoAnalysis results GLOBALLY by composite score and export
  * the selected clips (extract + face-track reframe + caption render + raw copy + manifest).
@@ -270,7 +348,79 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
     for (const clip of ranked) pool.push({ clip, source: analysis });
   }
 
-  const selected = rankAcrossAnalyses(pool, { top: opts.top, perVideoCap: opts.perVideoCap });
+  // v7 completion pass + STRICT 6/6 gate: the top-K ranked candidates each get one
+  // vision-capable arc-completion call; only complete stories export (--lenient overrides;
+  // no LLM → today's behavior, no gate). Survivors are re-sorted by the refined composite.
+  const provider = pickSemanticProvider(process.env);
+  const arcRejections: ArcRejection[] = [];
+  const arcStatus = new Map<string, ArcStatus>();          // keyed by FINAL clip_id
+  let selected: SourcedRankedClip[];
+  if (provider === 'none') {
+    selected = rankAcrossAnalyses(pool, { top: opts.top, perVideoCap: opts.perVideoCap });
+  } else {
+    const K = Math.max(opts.arcTopk ?? 8, opts.top);
+    const topK = rankAcrossAnalyses(pool, { top: K, perVideoCap: opts.perVideoCap });
+    const survivors: { item: SourcedRankedClip; status: ArcStatus }[] = [];
+    const spArc = ora(`Arc completion + 6/6 gate (${topK.length} candidates)…`).start();
+    for (const item of topK) {
+      const { clip, source } = item;
+      const window = { start: clip.start, end: clip.end };
+      const rmsCurve = toCurve(source.audio);
+      const motion = source.motion ?? [];
+      const evidence = buildEvidenceBlock({
+        window: padSpan(window, 10, source.meta.duration),
+        rms: rmsCurve, motion, silences: source.audio.silence_regions,
+      });
+      // Ladder: keyframes fail → completion proceeds numbers-only.
+      const images = await extractKeyframes(
+        source.videoPath,
+        keyframeTimes(window, peakTime(rmsCurve, window), peakTime(motion, window)),
+        join(WS, 'analysis', source.jobId, 'keyframes'),
+      ).catch(() => []);
+      const contextSegments = source.segments.filter((s) => s.end > window.start - 60 && s.start < window.end + 60);
+      const completion = await completeArc({
+        window, segments: contextSegments, evidence, images,
+        priorArc: clip.arc, mode: source.mode, durationSec: source.meta.duration,
+      });
+      const gate = gateArc(completion);
+      if (!gate.pass) {
+        arcRejections.push(arcRejectionRow(clip, gate.missing, completion ? 'incomplete-arc' : 'arc-label-failed'));
+        if (!opts.lenient) continue;
+        const withLabel = completion ? applyCompletionToClip(clip, completion, window) : clip;
+        survivors.push({ item: { source, clip: withLabel }, status: { complete: false, missing: gate.missing } });
+        continue;
+      }
+      const used = opts.allowRepeats ? [] : await loadUsedRanges(source.jobId);
+      const bounds = resolveBounds(completion!, {
+        envelope: MODE_PROFILES[source.mode].lengths, segments: source.segments,
+        used, durationSec: source.meta.duration,
+      });
+      if ('reject' in bounds) {
+        arcRejections.push(arcRejectionRow(clip, [], 'overlap'));
+        if (!opts.lenient) continue;
+        // Arc complete but the expansion collided with used ranges; keep the original bounds.
+        survivors.push({ item: { source, clip: applyCompletionToClip(clip, completion!, window) }, status: { complete: true, missing: [] } });
+        continue;
+      }
+      survivors.push({ item: { source, clip: applyCompletionToClip(clip, completion!, bounds) }, status: { complete: true, missing: [] } });
+    }
+    spArc.succeed(`arc gate: ${survivors.length}/${topK.length} passed${arcRejections.length ? ` (${arcRejections.length} rejected)` : ''}`);
+    survivors.sort((a, b) => b.item.clip.composite_score - a.item.clip.composite_score);
+    const kept = survivors.slice(0, opts.top);
+    selected = kept.map(({ item }, i) => ({
+      source: item.source,
+      clip: { ...item.clip, rank: i + 1, clip_id: `clip_${String(i + 1).padStart(3, '0')}` },
+    }));
+    kept.forEach((s, i) => arcStatus.set(`clip_${String(i + 1).padStart(3, '0')}`, s.status));
+    if (arcRejections.length > 0) {
+      const t = new Table({ head: ['Span', 'Missing', 'Reason'] });
+      arcRejections.forEach((r) => t.push([`${r.start.toFixed(1)}-${r.end.toFixed(1)}s`, r.missing.join(', ') || '—', r.reason]));
+      logger.info('\nArc gate rejections:\n' + t.toString());
+    }
+    if (selected.length === 0) {
+      logger.warn('arc gate: ZERO clips passed 6/6 — nothing to export. See the rejection table (--lenient to export anyway).');
+    }
+  }
 
   const id = analyses.length === 1 ? analyses[0].jobId : batchId(analyses.map((a) => a.url));
   const exportsDir = join(WS, 'exports', id);
