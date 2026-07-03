@@ -227,7 +227,7 @@ export async function analyzeVideo(url: string, opts: AllOpts): Promise<VideoAna
           window: { start: c.start, end: c.end },
           rms: toCurve(audio), motion, silences: audio.silence_regions,
         }),
-        { cachePath: join(dirs.analysis, `layer_arcs_${chosen}.json`), durationSec: meta.duration, mode: profile.name },
+        { cachePath: join(dirs.analysis, `layer_arcs_${chosen}.json`), durationSec: meta.duration, mode: profile.name, maxSpanSec: profile.lengths.max },
       );
       arcCandidates = mergeMinedCandidates(candidates, arcs);
       sp.succeed(`arcs: ${arcs.length} mined, ${arcCandidates.length} candidates total`);
@@ -381,6 +381,7 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
       const completion = await completeArc({
         window, segments: contextSegments, evidence, images,
         priorArc: clip.arc, mode: source.mode, durationSec: source.meta.duration,
+        maxSec: MODE_PROFILES[source.mode].lengths.max,
       });
       const gate = gateArc(completion);
       if (!gate.pass) {
@@ -396,7 +397,7 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
         used, durationSec: source.meta.duration,
       });
       if ('reject' in bounds) {
-        arcRejections.push(arcRejectionRow(clip, [], 'overlap'));
+        arcRejections.push(arcRejectionRow(clip, [], bounds.reject));
         if (!opts.lenient) continue;
         // Arc complete but the expansion collided with used ranges; keep the original bounds.
         survivors.push({ item: { source, clip: applyCompletionToClip(clip, completion!, window) }, status: { complete: true, missing: [] } });

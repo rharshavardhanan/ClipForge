@@ -104,3 +104,9 @@ describe('mineArcs Gemini-shape tolerance', () => {
     expect(miningPrompt(chunk, 'E', 'clippies')).toContain('"arcs"');
   });
 });
+
+describe('miningPrompt max span', () => {
+  it('states the maximum story span when given', () => {
+    expect(miningPrompt(chunk, 'E', 'mindcuts', 60)).toMatch(/60/);
+  });
+});

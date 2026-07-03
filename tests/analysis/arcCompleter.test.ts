@@ -91,3 +91,31 @@ describe('completeArc', () => {
     })).toBeNull();
   });
 });
+
+describe('resolveBounds envelope enforcement (post-clamp component check)', () => {
+  const segments = Array.from({ length: 60 }, (_, i) =>
+    ({ id: i, start: i * 4, end: i * 4 + 4, text: `sentence ${i}.`, words: [] }));
+  it('an arc longer than the mode envelope is REJECTED, never silently truncated', () => {
+    // 97s arc: setup at 12.9, reaction ends 110.3 — can never fit max 60s
+    const longArc = parseCompletion({
+      synopsis: 's', confidence: 0.9, reactionAfterPeak: true, bounds: { start: 12.9, end: 110.3 },
+      components: {
+        setup: { start: 12.9, end: 36.8 }, trigger: { start: 36.8, end: 41.9 },
+        escalation: { start: 41.9, end: 57.4 }, peak: { start: 57.4, end: 77.8 },
+        payoff: { start: 77.8, end: 104.3 }, reaction: { start: 104.3, end: 110.3 },
+      },
+    }, 400)!;
+    const r = resolveBounds(longArc, { envelope: DEFAULT_LENGTHS, segments, used: [], durationSec: 400 });
+    expect(r).toEqual({ reject: 'envelope' });
+  });
+});
+
+describe('prompts state the max clip length', () => {
+  it('completionPrompt tells the model the envelope so it finds arcs that FIT', () => {
+    const p = completionPrompt({
+      window: { start: 22, end: 34 }, contextSegments: [], evidence: 'E',
+      mode: 'mindcuts', hasImages: false, maxSec: 60,
+    });
+    expect(p).toContain('60');
+  });
+});
