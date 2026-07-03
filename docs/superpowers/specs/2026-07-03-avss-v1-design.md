@@ -57,7 +57,7 @@ Deterministic curves at 0.5 s resolution, all 0–1:
 
 - **Attention** — base from speech density (words/s) + normalized RMS; each visual-change event (hook card, zoom, B-roll start/end, emphasized caption word) adds a decaying boost; a staleness decay grows when >2.5 s pass with no visual change (spec: "visual change every 1–2 sec").
 - **Dopamine spikes** — events `{ t, kind: impact|reward|humor|surprise, strength }` from emphasized words at RMS peaks (impact), semantic humor/surprise subscores gated to loud moments, hook reveal, payoff (final 20 % high-RMS moment → reward).
-- **Swipe hazard** — per-tick exit probability: silence/dead air ↑, staleness ↑, low emotion ↑; the first 3 s are weighted ~3× (weak hook is the dominant swipe cause: no hook text, low RMS, no emphasized word in the window).
+- **Swipe hazard** — per-tick exit probability: silence/dead air ↑, staleness ↑, low emotion ↑; the first 3 s are weighted ~3× (weak hook is the dominant swipe cause: no hook text, low RMS, no emphasized word in the window). Emphasized caption pops count as visual changes here too (calibrated after the first live smoke: caption-dense clips are not static frames, and per-tick rates are ~half the per-second intent so a typical clip predicts 25–60 % completion).
 - **Retention curve** — survival: `retention[t] = Π (1 − hazard[s])`. Yields `avg_retention`, `completion = retention[end]`, and drop-off points (hazard local maxima).
 - **Rewatch score** — surprise + humor subscores, dopamine density in the final 25 % (loop pull), tightness (≤ mode soft cap bonus, cut density), ending-on-a-spike bonus.
 
