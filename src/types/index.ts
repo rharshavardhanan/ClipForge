@@ -19,7 +19,20 @@ export interface RmsPoint { time: number; rms: number; }       // rms normalized
 export interface SilenceRegion { start: number; end: number; }
 export interface AudioEnergyLayer { rms_curve: RmsPoint[]; silence_regions: SilenceRegion[]; }
 export interface WindowScore { start: number; end: number; triggerScore: number; audioScore: number; semanticScore: number; commentScore?: number; composite: number; }
-export interface ClipCandidate { start: number; end: number; composite: number; triggerScore: number; audioScore: number; commentScore?: number; }
+export interface ClipCandidate { start: number; end: number; composite: number; triggerScore: number; audioScore: number; commentScore?: number; arc?: ArcLabel; }
+
+// Micro-story arc (v7): six-component story label over source-absolute times.
+export type ArcComponentName = 'setup' | 'trigger' | 'escalation' | 'peak' | 'payoff' | 'reaction';
+export interface ArcSpan { start: number; end: number; }
+export type ArcComponents = Partial<Record<ArcComponentName, ArcSpan>>;
+export interface ArcLabel {
+  synopsis: string;
+  confidence: number;                 // 0-1
+  components: ArcComponents;
+  reactionAfterPeak?: boolean;
+  provider?: string;
+}
+
 export interface RankedClip {
   rank: number; clip_id: string; start: number; end: number; duration: number;
   composite_score: number;
@@ -28,6 +41,8 @@ export interface RankedClip {
   hook_moment: string; clip_titles: string[]; is_standalone: boolean;
   recommended_duration: number; reason: string; transcript_excerpt: string;
   sentiment?: string;
+  /** Micro-story arc label (v7) — carried from the candidate, refined by the completion pass. */
+  arc?: ArcLabel;
   /** Set by global cross-video ranking (MV1) to attribute this clip to its source video.
    * Absent for single-video runs — exporter falls back to the jobId/source args passed in. */
   source_video?: string;
