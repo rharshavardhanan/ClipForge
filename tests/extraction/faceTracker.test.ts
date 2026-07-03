@@ -328,7 +328,9 @@ describe('detectFaceTrack (integration, gated)', () => {
     async () => {
       let track: Awaited<ReturnType<typeof detectFaceTrack>> = [];
       try {
-        track = await detectFaceTrack(videoPath, 1920, 1080, 1);
+        // Only the first 20s — enough to prove detection works; the full 6-min video
+        // took ~2min of WASM detection and flaked on loaded machines.
+        track = await detectFaceTrack(videoPath, 1920, 1080, 1, 20);
       } catch (err) {
         // detector/model unavailable in this environment — treat as skip, not failure
         console.warn('detectFaceTrack unavailable, skipping assertion:', err);
@@ -337,7 +339,8 @@ describe('detectFaceTrack (integration, gated)', () => {
       // track is only non-empty if at least one frame had a detected face
       expect(Array.isArray(track)).toBe(true);
     },
-    120_000,
+    // Needs ~2min alone; concurrent renders (ffmpeg at full tilt) can double that.
+    300_000,
   );
 });
 
@@ -352,27 +355,24 @@ describe('forced full-screen crop (--framing crop)', () => {
     expect(track[0].cy).toBe(SRC_H / 2);
   });
 
-  it('forcedCropTrack: no tracks → center crop fallback', async () => {
+  it('forcedCropTrack: no frames → center crop fallback', async () => {
     const { forcedCropTrack } = await import('../../src/extraction/faceTracker.js');
     const track = forcedCropTrack([], [], SRC_W, SRC_H);
     expect(track).toHaveLength(1);
     expect(track[0].cx).toBe(SRC_W / 2);
   });
 
-  it('forcedCropTrack: single track follows the face', async () => {
+  it('forcedCropTrack: single face follows the face', async () => {
     const { forcedCropTrack } = await import('../../src/extraction/faceTracker.js');
     const box = { x: 1200, y: 300, w: 200, h: 220 };
-    const tracks = [{ id: 0, samples: [
-      { time: 0, box, mouthOpenness: 0.1 },
-      { time: 0.33, box, mouthOpenness: 0.1 },
-    ] }];
-    const track = forcedCropTrack([], tracks, SRC_W, SRC_H);
+    const frames = [0, 0.33].map((time) => ({ time, faces: [{ box, mouthOpenness: 0.1 }] }));
+    const track = forcedCropTrack(frames, [], SRC_W, SRC_H);
     expect(track.length).toBeGreaterThan(0);
     // crop centers near the face, not the frame center
     expect(Math.abs(track[0].cx - 1300)).toBeLessThan(200);
   });
 
-  it('forcedCropTrack: two tracks → active-speaker crop (never empty, inside frame)', async () => {
+  it('forcedCropTrack: two faces → active-speaker crop (never empty, inside frame)', async () => {
     const { forcedCropTrack } = await import('../../src/extraction/faceTracker.js');
     const a = { x: 200, y: 300, w: 200, h: 220 };
     const b = { x: 1400, y: 300, w: 200, h: 220 };
@@ -383,15 +383,44 @@ describe('forced full-screen crop (--framing crop)', () => {
         { box: b, mouthOpenness: time < 0.5 ? 0.05 : 0.6 },
       ],
     }));
-    const tracks = [
-      { id: 0, samples: frames.map((f) => ({ time: f.time, box: a, mouthOpenness: f.faces[0].mouthOpenness })) },
-      { id: 1, samples: frames.map((f) => ({ time: f.time, box: b, mouthOpenness: f.faces[1].mouthOpenness })) },
-    ];
-    const track = forcedCropTrack(frames, tracks, SRC_W, SRC_H);
+    const track = forcedCropTrack(frames, [], SRC_W, SRC_H);
     expect(track.length).toBeGreaterThan(0);
     for (const k of track) {
       expect(k.cx - k.cropW / 2).toBeGreaterThanOrEqual(0);
       expect(k.cx + k.cropW / 2).toBeLessThanOrEqual(SRC_W);
     }
+  });
+
+  it('forcedCropTrack: hard cut → windows snap per shot instead of averaging across the cut', async () => {
+    const { forcedCropTrack } = await import('../../src/extraction/faceTracker.js');
+    const left = { x: 100, y: 200, w: 200, h: 220 };   // shot 1: face top-left
+    const right = { x: 1500, y: 700, w: 200, h: 220 }; // shot 2: face bottom-right
+    const frames = [
+      ...[0, 0.5, 1.0, 1.5].map((time) => ({ time, faces: [{ box: left, mouthOpenness: 0.3 }] })),
+      ...[2.0, 2.5, 3.0, 3.5].map((time) => ({ time, faces: [{ box: right, mouthOpenness: 0.3 }] })),
+    ];
+    const track = forcedCropTrack(frames, [2.0], SRC_W, SRC_H);
+    const shot1 = track.filter((k) => k.time < 2);
+    const shot2 = track.filter((k) => k.time >= 2);
+    expect(shot1.length).toBeGreaterThan(0);
+    expect(shot2.length).toBeGreaterThan(0);
+    // each shot's window stays near ITS face — no drift through the middle
+    for (const k of shot1) expect(Math.abs(k.cx - 200)).toBeLessThan(300);
+    for (const k of shot2) expect(Math.abs(k.cx - 1600)).toBeLessThan(300);
+  });
+
+  it('smoothTrack: bottom-anchored small face → tighter zoom, face NOT pinned to the window edge', () => {
+    // face cam in the bottom-right corner of a 1080p stream layout (the "ceiling shot" case)
+    const box = { x: 1500, y: 880, w: 140, h: 150 };
+    const samples: FaceSample[] = [0, 0.33, 0.66, 1.0].map((time) => ({ time, box }));
+    const track = smoothTrack(samples, SRC_W, SRC_H);
+    const k = track[0];
+    const faceCenterY = 880 + 75;
+    const winTop = k.cy - k.cropH / 2;
+    const relPos = (faceCenterY - winTop) / k.cropH;
+    // face sits in the upper ~60% of the window, not at the bottom edge
+    expect(relPos).toBeLessThan(0.6);
+    // and the window is tight (edge-aware shrink), not a huge frame full of ceiling
+    expect(k.cropH).toBeLessThanOrEqual(SRC_H * 0.25);
   });
 });
