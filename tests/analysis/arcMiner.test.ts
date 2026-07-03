@@ -86,3 +86,21 @@ describe('overlapFraction / mergeMinedCandidates', () => {
     expect(mined.end).toBe(115);
   });
 });
+
+describe('mineArcs Gemini-shape tolerance', () => {
+  const looseArc = {
+    setup: '10-13', trigger: '12-13', escalation: '13-16',
+    peak: '16-18', payoff: '18-21', reaction: '21-25', reactionAfterPeak: true,
+  };
+  it('accepts a TOP-LEVEL ARRAY of flattened arcs (what free-tier Gemini actually returns)', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'arcs-'));
+    const ask = vi.fn().mockResolvedValue([looseArc]);
+    const arcs = await mineArcs([chunk], () => 'E', { cachePath: join(dir, 'c.json'), durationSec: 600, mode: 'clippies', ask });
+    expect(arcs).toHaveLength(1);
+    expect(arcs[0].components.setup).toEqual({ start: 10, end: 13 });
+    expect(arcs[0].confidence).toBe(0.5);          // neutral prior when Gemini omits it
+  });
+  it('prompt states the exact output shape', () => {
+    expect(miningPrompt(chunk, 'E', 'clippies')).toContain('"arcs"');
+  });
+});

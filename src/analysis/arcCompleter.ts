@@ -6,7 +6,7 @@
  * sentence-aware rule, and used_ranges; gateArc enforces STRICT 6/6.
  */
 import { askVisionJson, type AskVisionFn, type VisionImage } from '../broll/llmJson.js';
-import { arcOuterSpan, missingComponents, validateArc, ARC_COMPONENT_NAMES } from './arcTypes.js';
+import { arcOuterSpan, missingComponents, normalizeArcRaw, validateArc, ARC_COMPONENT_NAMES } from './arcTypes.js';
 import { clampToSentences } from '../clipDetection/merger.js';
 import type { UsedRange } from '../clipDetection/usedRanges.js';
 import type { ClipLengths, ContentMode } from '../modes.js';
@@ -60,6 +60,12 @@ export function completionPrompt(opts: {
     'Components may be brief (>=0.5s) or overlap/nest. Times are source-absolute seconds.',
     'Propose bounds: expand backward at least 3s to include the cause/setup and forward at least 3s to include the result/reaction when the story is incomplete. Context beats shortness.',
     'Set reactionAfterPeak true when a clear reaction FOLLOWS the peak.',
+    'Return ONLY JSON in EXACTLY this shape (numbers in seconds, every key shown):',
+    '{"synopsis":"one line","confidence":0.8,"reactionAfterPeak":true,'
+      + '"components":{"setup":{"start":18.0,"end":24.0},"trigger":{"start":23.0,"end":24.0},'
+      + '"escalation":{"start":24.0,"end":28.0},"peak":{"start":28.0,"end":30.0},'
+      + '"payoff":{"start":30.0,"end":33.0},"reaction":{"start":33.0,"end":38.0}},'
+      + '"bounds":{"start":18.0,"end":40.0}}',
     ...(opts.priorArc ? ['', `A previous pass suggested: ${JSON.stringify(opts.priorArc.components)}`] : []),
     ...(opts.hasImages ? ['', 'Frames from the clip are attached in time order — use them to see silent/visual action.'] : []),
     '', 'TRANSCRIPT (context around the candidate):', transcript, '', 'SIGNAL EVIDENCE:', opts.evidence,
@@ -68,7 +74,8 @@ export function completionPrompt(opts: {
 
 /** PURE: parse one completion response. `missing` is COMPUTED from the
  *  components, never trusted from the model. Null on structural garbage. */
-export function parseCompletion(raw: unknown, durationSec: number): ArcCompletion | null {
+export function parseCompletion(rawIn: unknown, durationSec: number): ArcCompletion | null {
+  const raw = normalizeArcRaw(rawIn);
   const label = validateArc(raw, durationSec);
   if (!label) return null;
   const bounds = (raw as { bounds?: unknown }).bounds as ArcSpan | undefined;

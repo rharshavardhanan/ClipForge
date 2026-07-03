@@ -7,7 +7,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { askVisionJson, type AskVisionFn } from '../broll/llmJson.js';
-import { arcOuterSpan, arcScore, validateArc, ARC_COMPONENT_NAMES } from './arcTypes.js';
+import { arcOuterSpan, arcScore, normalizeArcRaw, validateArc, ARC_COMPONENT_NAMES } from './arcTypes.js';
 import type { TranscriptChunk } from './arcChunker.js';
 import type { ArcLabel, ArcSpan, ClipCandidate } from '../types/index.js';
 import type { ContentMode } from '../modes.js';
@@ -57,6 +57,11 @@ export function miningPrompt(chunk: TranscriptChunk, evidence: string, mode: Con
     'Components may be brief (>=0.5s) or overlap/nest (a trigger inside setup, escalation coinciding with peak) — identify all six or omit the story.',
     `Mode vocabulary: ${MODE_VOCAB[mode]}`,
     'Times are source-absolute seconds. Set reactionAfterPeak true when a clear reaction FOLLOWS the peak (weight those stories higher).',
+    'Return ONLY JSON in EXACTLY this shape (numbers in seconds, every key shown):',
+    '{"arcs":[{"synopsis":"one line","confidence":0.8,"reactionAfterPeak":true,'
+      + '"components":{"setup":{"start":12.9,"end":31.3},"trigger":{"start":31.3,"end":36.8},'
+      + '"escalation":{"start":36.8,"end":57.4},"peak":{"start":57.4,"end":77.8},'
+      + '"payoff":{"start":77.8,"end":93.6},"reaction":{"start":93.6,"end":110.3}}}]}',
     '', 'TRANSCRIPT:', transcript, '', 'SIGNAL EVIDENCE:', evidence,
   ].join('\n');
 }
@@ -102,12 +107,15 @@ export async function mineArcs(
         schema: ARC_MINE_SCHEMA as unknown as Record<string, unknown>,
         label: `arc-mine ${key}`,
       });
-      const arr = Array.isArray((raw as { arcs?: unknown[] })?.arcs) ? (raw as { arcs: unknown[] }).arcs : null;
+      // Gemini-first tolerance: a top-level array IS the arcs list (free-tier Gemini
+      // frequently drops the {"arcs": ...} wrapper despite the stated shape).
+      const arr = Array.isArray(raw) ? raw
+        : Array.isArray((raw as { arcs?: unknown[] })?.arcs) ? (raw as { arcs: unknown[] }).arcs : null;
       if (arr === null) {
         logger.warn(`[arc-mine ${key}] chunk failed — no arcs from this chunk (will retry next run)`);
         continue;                                    // NOT cached → retryable
       }
-      labels = arr.map((a) => validateArc(a, opts.durationSec)).filter((a): a is ArcLabel => a !== null);
+      labels = arr.map((a) => validateArc(normalizeArcRaw(a), opts.durationSec)).filter((a): a is ArcLabel => a !== null);
       cache.chunks[key] = labels;
       await mkdir(dirname(opts.cachePath), { recursive: true });
       await writeFile(opts.cachePath, JSON.stringify(cache, null, 2));  // incremental
