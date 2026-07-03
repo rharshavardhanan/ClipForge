@@ -75,7 +75,8 @@ Walks the MusicMap sections and fills them with moments:
 - **payoff**: 0.5x slowmo of the peak, then freeze + payoff image + final flash hit.
 - Flash frames (white/red/black/glitch/blur, 1–4 frames) at cut points; density scales with
   section intensity.
-- Deterministic given seed. Target duration flag `--duration` (default ~20–30s window).
+- Deterministic given seed. `--duration <sec>` sets the target length (default 25, clamped
+  15–45); the planner trims/extends section fills to land within ±2 beats of the target.
 
 Output `MontagePlan`: segments (src, srcStart, srcDur, playbackRate, effects[]), flashEvents,
 zoomShakeEvents, counterTimeline, payoffAt.
