@@ -35,8 +35,22 @@ export async function askJson(opts: AskJsonOpts, env: NodeJS.ProcessEnv = proces
     if (viaClaude !== null) return viaClaude;
   }
   const keys = loadGeminiKeys(env);
-  if (keys.length > 0) return askGemini(opts, keys[0], env);
+  if (keys.length > 0) return askGeminiPool(opts, keys, env, askGemini);
   if (!hasClaude) logger.warn(`[${opts.label}] no ANTHROPIC_API_KEY / GEMINI_API_KEYS — skipping`);
+  return null;
+}
+
+/** Try each pool key in order until one answers — free-tier daily quotas
+ *  (20 req/day/key) exhaust fast, and the pool exists exactly for this. */
+async function askGeminiPool<T extends AskJsonOpts>(
+  opts: T, keys: string[], env: NodeJS.ProcessEnv,
+  askFn: (opts: T, key: string, env: NodeJS.ProcessEnv) => Promise<unknown | null>,
+): Promise<unknown | null> {
+  for (const [i, key] of keys.entries()) {
+    const res = await askFn(opts, key, env);
+    if (res !== null) return res;
+    if (i < keys.length - 1) logger.warn(`[${opts.label}] Gemini key ${i + 1}/${keys.length} failed — rotating`);
+  }
   return null;
 }
 
@@ -70,7 +84,7 @@ export async function askGeminiJson(opts: AskJsonOpts, env: NodeJS.ProcessEnv = 
     logger.warn(`[${opts.label}] no GEMINI_API_KEYS — skipping`);
     return null;
   }
-  return askGemini(opts, keys[0], env);
+  return askGeminiPool(opts, keys, env, askGemini);
 }
 
 // ---- Vision (v7 arc engine) ---------------------------------------------------------------
@@ -111,7 +125,7 @@ export async function askVisionJson(opts: AskVisionOpts, env: NodeJS.ProcessEnv 
     if (viaClaude !== null) return viaClaude;
   }
   const keys = loadGeminiKeys(env);
-  if (keys.length > 0) return askGeminiVision(opts, keys[0], env);
+  if (keys.length > 0) return askGeminiPool(opts, keys, env, askGeminiVision);
   logger.warn(`[${opts.label}] provider ${provider} unavailable and no Gemini fallback`);
   return null;
 }
