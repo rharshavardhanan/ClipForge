@@ -2,9 +2,10 @@ import { describe, it, expect } from 'vitest';
 import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { buildClipJson, buildManifest, writeExports, buildBrollEntries, buildBrollManifest } from '../../src/export/exporter.js';
+import { buildClipJson, buildManifest, writeExports, buildBrollEntries, buildBrollManifest, buildAvssFiles, buildAvssBlock, type AvssExport } from '../../src/export/exporter.js';
 import { buildSeoPack } from '../../src/export/seo.js';
 import type { RankedClip, VideoMetadata } from '../../src/types/index.js';
+import type { ScoredVariant } from '../../src/avss/variants.js';
 
 const clip: RankedClip = {
   rank: 1, clip_id: 'clip_001', start: 10, end: 70, duration: 60, composite_score: 8,
@@ -83,5 +84,81 @@ describe('B-roll exports (v6)', () => {
     const files = { final: 'f', raw: 'r', srt: 's' };
     expect((buildClipJson(clip, 'j', files, undefined, [seg]) as { broll?: unknown[] }).broll).toHaveLength(1);
     expect('broll' in buildClipJson(clip, 'j', files)).toBe(false);
+  });
+});
+
+describe('AVSS exports (v7)', () => {
+  const sim = {
+    attention: [{ t: 0, v: 0.5 }, { t: 0.5, v: 0.6 }],
+    dopamine: [{ t: 1, kind: 'impact' as const, strength: 0.8 }],
+    hazard: [{ t: 0, v: 0.02 }, { t: 0.5, v: 0.01 }],
+    retention: [{ t: 0, v: 0.98 }, { t: 0.5, v: 0.97 }],
+    avgRetention: 0.975, completion: 0.97, rewatch: 0.4,
+    rewatchFactors: { surpriseHumor: 0.2, loopPull: 0.1, tightness: 0.1, endSpike: 0 },
+    dropoffs: [0], overall: 0.71,
+  };
+  const winner: ScoredVariant = {
+    variant: {
+      id: 'B', changed: ['captionPreset'], violations: [],
+      plan: {
+        hookText: 'wait', hookSource: 'moment', captionPreset: 'gaming',
+        zoom: { enabled: true, times: [3], intensity: 1 },
+        sfx: { enabled: true, volume: 0.6 }, brollWindows: [], musicOn: false,
+      },
+    },
+    sim,
+  };
+  const loser: ScoredVariant = {
+    ...winner,
+    variant: { ...winner.variant, id: 'A', changed: [] },
+    sim: { ...sim, overall: 0.6 },
+  };
+  const avss: AvssExport = {
+    winner, all: [loser, winner],
+    dna: {
+      mode: 'clippies', captionPreset: 'gaming', hookSource: 'moment',
+      zoomPer10s: 1, zoomIntensity: 1, firstZoomAt: 3, sfxOn: true,
+      brollCoverage: 0, wordsPerSec: 2,
+    },
+    policyVersion: 1,
+  };
+
+  it('buildAvssFiles emits the five spec output files with expected keys', () => {
+    const files = buildAvssFiles('clip_001', avss);
+    expect(Object.keys(files).sort()).toEqual([
+      'clip_001_attention_graph.json',
+      'clip_001_edit_variant_scores.json',
+      'clip_001_retention_prediction.json',
+      'clip_001_rewatch_score.json',
+      'clip_001_swipe_risk.json',
+    ]);
+    expect(files['clip_001_attention_graph.json']).toMatchObject({ tick: 0.5, attention: sim.attention, dopamine: sim.dopamine });
+    expect(files['clip_001_retention_prediction.json']).toMatchObject({ avg_retention: 0.975, completion: 0.97, dropoffs: [0] });
+    expect(files['clip_001_swipe_risk.json']).toMatchObject({ hazard: sim.hazard, top_risks: [0] });
+    expect(files['clip_001_rewatch_score.json']).toMatchObject({ score: 0.4, factors: sim.rewatchFactors });
+    const variants = files['clip_001_edit_variant_scores.json'] as { id: string; winner: boolean }[];
+    expect(variants.map((v) => [v.id, v.winner])).toEqual([['A', false], ['B', true]]);
+  });
+
+  it('buildAvssBlock summarizes winner + predictions for clip.json', () => {
+    const block = buildAvssBlock(avss);
+    expect(block).toMatchObject({
+      variant: 'B', changed: ['captionPreset'], policy_version: 1,
+      predicted: { retention: 0.975, completion: 0.97, rewatch: 0.4, overall: 0.71 },
+    });
+    expect(block.dna.captionPreset).toBe('gaming');
+  });
+
+  it('writeExports writes AVSS files + block only for clips with an entry', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'exports-avss-'));
+    const clip2: RankedClip = { ...clip, clip_id: 'clip_002', rank: 2 };
+    await writeExports(dir, 'H14bBuluwB8', 'src', meta, [clip, clip2], undefined, undefined,
+      new Map([['clip_001', avss]]));
+    const j1 = JSON.parse(await readFile(join(dir, 'clip_001.json'), 'utf8'));
+    expect(j1.avss.variant).toBe('B');
+    expect(JSON.parse(await readFile(join(dir, 'clip_001_attention_graph.json'), 'utf8')).tick).toBe(0.5);
+    const j2 = JSON.parse(await readFile(join(dir, 'clip_002.json'), 'utf8'));
+    expect('avss' in j2).toBe(false);
+    await expect(readFile(join(dir, 'clip_002_attention_graph.json'), 'utf8')).rejects.toThrow();
   });
 });
