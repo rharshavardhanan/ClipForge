@@ -52,7 +52,11 @@ export async function fetchVideoStats(
     const chunk = ids.slice(i, i + 50);
     const url = `https://www.googleapis.com/youtube/v3/videos?part=statistics&id=${chunk.join(',')}`;
     const res = await fetchFn(url, { headers: { Authorization: `Bearer ${token}` } });
-    if (!res.ok) throw new Error(`videos.list failed (${res.status})`);
+    if (!res.ok) {
+      const body: any = await res.json().catch(() => ({}));
+      const reason = body?.error?.errors?.[0]?.reason ?? '';
+      throw new Error(`videos.list failed (${res.status}${reason ? ` ${reason}` : ''})`);
+    }
     const j: any = await res.json();
     for (const item of j.items ?? []) {
       out.set(item.id, {

@@ -65,10 +65,14 @@ function eventGap(events: number[], t: number): number {
   return t - last;
 }
 
-function attentionCurve(plan: EditPlan, signals: SourceSignals, events: number[]): SimPoint[] {
-  // Emphasized caption words are visual changes too (word-level highlight/punch).
-  const withWords = [...new Set([...events, ...signals.words.filter((w) => w.emphasized).map((w) => w.start)])]
+/** Plan events + emphasized caption words (word-level pops ARE visual changes). */
+function eventsWithEmphasis(events: number[], signals: SourceSignals): number[] {
+  return [...new Set([...events, ...signals.words.filter((w) => w.emphasized).map((w) => w.start)])]
     .sort((a, b) => a - b);
+}
+
+function attentionCurve(plan: EditPlan, signals: SourceSignals, events: number[]): SimPoint[] {
+  const withWords = eventsWithEmphasis(events, signals);
   return ticksFor(signals.durationSec).map((t) => {
     const gap = eventGap(withWords, t);
     const boost = 0.25 * Math.exp(-gap / 0.8);
@@ -113,24 +117,29 @@ function dopamineEvents(plan: EditPlan, signals: SourceSignals): DopamineEvent[]
   return merged.slice(0, 8);
 }
 
+// Per-TICK (0.5s) hazard rates — calibrated so a typical captioned clip predicts
+// 25-60% completion, not ~0 (rates here are roughly half the per-second intent).
 function swipeHazard(plan: EditPlan, signals: SourceSignals, events: number[]): SimPoint[] {
   const emo = Math.max(
     signals.semantic.emotional_intensity, signals.semantic.humor, signals.semantic.surprise,
   );
   const emphasizedEarly = signals.words.some((w) => w.emphasized && w.start < 3);
+  // Emphasized caption pops keep the frame alive between zooms/B-roll — a caption-dense
+  // clip is NOT a static frame (first live smoke had staleness saturating on one).
+  const withWords = eventsWithEmphasis(events, signals);
   return ticksFor(signals.durationSec).map((t) => {
-    const gap = eventGap(events, t);
-    let h = 0.010;
-    if (inSilence(signals, t) && gap > 1.5) h += 0.030;
-    h += Math.min(0.05, 0.012 * Math.max(0, gap - 2.5));
-    if (emo < 0.3) h += 0.010;
+    const gap = eventGap(withWords, t);
+    let h = 0.005;
+    if (inSilence(signals, t) && gap > 1.5) h += 0.015;
+    h += Math.min(0.025, 0.006 * Math.max(0, gap - 2.5));
+    if (emo < 0.3) h += 0.005;
     if (t < 3) {
       h *= 3; // the swipe decision window
       if (plan.hookText) h *= 0.55;
       if (emphasizedEarly) h *= 0.8;
       if (rmsAt(signals, t) >= 0.6) h *= 0.85;
     }
-    return { t, v: Math.min(0.25, Math.max(0.001, h)) };
+    return { t, v: Math.min(0.15, Math.max(0.001, h)) };
   });
 }
 

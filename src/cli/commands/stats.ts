@@ -96,7 +96,19 @@ export async function runStats(dirs: string[], opts: StatsOpts = {}): Promise<vo
   }
 
   const token = await getToken(opts.channel);
-  const statsById = await fetchVideoStats([...new Set(targets.map((t) => t.videoId))], token, fetchFn);
+  let statsById;
+  try {
+    statsById = await fetchVideoStats([...new Set(targets.map((t) => t.videoId))], token, fetchFn);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (/403|insufficient/i.test(msg)) {
+      // Tokens minted before the readonly/analytics scopes were added can upload but not read.
+      logger.error(`YouTube read access denied (${msg}) — this token predates the stats scopes. Re-connect once: ./start.sh auth youtube`);
+      if (opts.json) console.log(JSON.stringify({ results: [], error: 'insufficient-scope' }));
+      return;
+    }
+    throw e;
+  }
 
   let policy = await loadPolicy(wsDir);
   let policyDirty = false;

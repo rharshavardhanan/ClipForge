@@ -116,6 +116,15 @@ describe('runStats', () => {
     expect(await readdir(templates)).toEqual([]);
   });
 
+  it('upload-only token (videos.list 403) → actionable re-auth message, no throw', async () => {
+    const ws = await makeWorkspace(uploadedClip);
+    const fetchFn = (async () => new Response(JSON.stringify({
+      error: { code: 403, errors: [{ reason: 'insufficientPermissions' }] },
+    }), { status: 403 })) as typeof fetch;
+    await expect(runStats([], { wsDir: ws, fetchFn, getToken: async () => 'tok' })).resolves.toBeUndefined();
+    expect((await loadPolicy(ws)).version).toBe(1); // untouched
+  });
+
   it('no uploaded clips → clean exit, no policy file', async () => {
     const ws = await mkdtemp(join(tmpdir(), 'avss-stats-empty-'));
     await runStats([], { wsDir: ws, getToken: async () => { throw new Error('should not be called'); } });
