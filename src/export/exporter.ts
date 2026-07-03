@@ -2,6 +2,56 @@ import type { BrollSegment, RankedClip, VideoMetadata } from '../types/index.js'
 import { writeFile, mkdir } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { buildSeoPack, writeSeoFiles, type SeoPack } from './seo.js';
+import { TICK } from '../avss/simulator.js';
+import type { ScoredVariant } from '../avss/variants.js';
+import type { EditDna } from '../avss/templates.js';
+
+/** Everything the exporter needs to persist one clip's AVSS run. */
+export interface AvssExport {
+  winner: ScoredVariant;
+  all: ScoredVariant[];
+  dna: EditDna;
+  policyVersion: number;
+}
+
+/** PURE: the five spec output files (name → JSON body) for one clip's AVSS result. */
+export function buildAvssFiles(clipId: string, a: AvssExport): Record<string, unknown> {
+  const s = a.winner.sim;
+  return {
+    [`${clipId}_attention_graph.json`]: { tick: TICK, attention: s.attention, dopamine: s.dopamine },
+    [`${clipId}_retention_prediction.json`]: {
+      curve: s.retention, avg_retention: s.avgRetention, completion: s.completion, dropoffs: s.dropoffs,
+    },
+    [`${clipId}_swipe_risk.json`]: {
+      hazard: s.hazard, top_risks: s.dropoffs, overall_risk: +(1 - s.completion).toFixed(4),
+    },
+    [`${clipId}_rewatch_score.json`]: { score: s.rewatch, factors: s.rewatchFactors },
+    [`${clipId}_edit_variant_scores.json`]: a.all.map(({ variant, sim }) => ({
+      id: variant.id,
+      changed: variant.changed,
+      violations: variant.violations,
+      predicted: {
+        retention: +sim.avgRetention.toFixed(4), completion: +sim.completion.toFixed(4),
+        rewatch: +sim.rewatch.toFixed(4), overall: +sim.overall.toFixed(4),
+      },
+      winner: variant.id === a.winner.variant.id,
+    })),
+  };
+}
+
+/** PURE: the `avss` block embedded in clip.json (what `clipforge stats` learns from). */
+export function buildAvssBlock(a: AvssExport) {
+  return {
+    variant: a.winner.variant.id,
+    changed: a.winner.variant.changed,
+    dna: a.dna,
+    predicted: {
+      retention: a.winner.sim.avgRetention, completion: a.winner.sim.completion,
+      rewatch: a.winner.sim.rewatch, overall: a.winner.sim.overall,
+    },
+    policy_version: a.policyVersion,
+  };
+}
 
 /** PURE: one clip's B-roll entries for clip.json / broll_manifest.json. */
 export function buildBrollEntries(broll: BrollSegment[]) {
@@ -26,6 +76,7 @@ export function buildClipJson(
   files: { final: string; raw: string; srt: string; thumbnail?: string },
   seo?: SeoPack,
   broll?: BrollSegment[],
+  avss?: AvssExport,
 ) {
   return {
     clip_id: clip.clip_id, rank: clip.rank, source_video: clip.source_video ?? jobId,
@@ -39,6 +90,7 @@ export function buildClipJson(
     recommended_duration: clip.recommended_duration, reason: clip.reason, sentiment: clip.sentiment,
     transcript_excerpt: clip.transcript_excerpt, seo,
     ...(broll && broll.length > 0 ? { broll: buildBrollEntries(broll) } : {}),
+    ...(avss ? { avss: buildAvssBlock(avss) } : {}),
     files,
   };
 }
@@ -58,6 +110,7 @@ export async function writeExports(
   dir: string, jobId: string, source: string, meta: VideoMetadata, clips: RankedClip[],
   packs?: Map<string, SeoPack>,
   brollByClip?: Map<string, BrollSegment[]>,
+  avssByClip?: Map<string, AvssExport>,
 ): Promise<void> {
   await mkdir(dir, { recursive: true });
   for (const clip of clips) {
@@ -69,8 +122,14 @@ export async function writeExports(
       final: `${clip.clip_id}_final.mp4`, raw: `${clip.clip_id}_raw.mp4`, srt: `${clip.clip_id}.srt`,
       thumbnail: `${clip.clip_id}_thumbnail.png`,
     };
+    const avss = avssByClip?.get(clip.clip_id);
+    if (avss) {
+      for (const [name, body] of Object.entries(buildAvssFiles(clip.clip_id, avss))) {
+        await writeFile(join(dir, name), JSON.stringify(body, null, 2));
+      }
+    }
     await writeFile(join(dir, `${clip.clip_id}.json`),
-      JSON.stringify(buildClipJson(clip, jobId, files, pack, brollByClip?.get(clip.clip_id)), null, 2));
+      JSON.stringify(buildClipJson(clip, jobId, files, pack, brollByClip?.get(clip.clip_id), avss), null, 2));
   }
   await writeFile(join(dir, 'broll_manifest.json'), JSON.stringify(buildBrollManifest(clips, brollByClip), null, 2));
   await writeFile(join(dir, 'clips_manifest.json'), JSON.stringify(buildManifest(jobId, source, meta, clips), null, 2));
