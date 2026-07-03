@@ -135,20 +135,28 @@ clipforge rankrot "craziest fails" --top 7 --harvest 40
 
 Give it a **topic**, get a ready-to-post countdown Short. The engine:
 
-1. expands the topic into ~5 search variations (Gemini Flash; template fallback) and
+1. expands the topic into ~5 search variations targeting **popular REAL footage** —
+   viral TikTok reposts, caught-on-camera clips (Gemini Flash; template fallback) — and
    searches YouTube via yt-dlp (only platform with a search extractor — TikTok/IG deferred)
-2. harvests up to 40 source clips into `./rankrot_cache/` (cached across runs)
-3. isolates each clip's **strongest 3–8s** by fusing a motion curve (ffmpeg `signalstats`
-   inter-frame difference) with a 0.5s loudness curve — peak lands ~⅓ into the window
+2. harvests the **most-viewed** candidates into `./rankrot_cache/` (view-count sorted;
+   AI-generated/animated/stock slop filtered by title/channel; mega-view compilations
+   allowed — only their first 4 minutes are fetched). Cached across runs.
+3. isolates each clip's strongest arc **adaptively (4–12s — each rank gets its own
+   length)** by fusing a motion curve (ffmpeg `signalstats`) with a 0.5s loudness curve:
+   the window grows in BOTH directions from the peak while the signal stays hot —
+   backward keeps the context/build-up, forward keeps the payoff — plus a tail pad so
+   clips never stop mid-action
 4. ranks through five layers → `0.35·visual + 0.20·audio + 0.20·reaction + 0.15·virality
-   + 0.10·novelty` (reaction = face presence/growth; virality = one Gemini Flash batch,
-   view-count fallback; novelty = frame aHash + title overlap, duplicates collapsed).
-   **No Claude in this engine** (by spec).
+   + 0.10·novelty` (reaction = face presence/growth; virality = one Gemini Flash batch
+   that also **flags AI-generated content for exclusion**, view-count fallback; novelty =
+   frame aHash + title overlap, duplicates collapsed). **No Claude in this engine** (by spec).
 5. renders the countdown **#5→#1, never reversed**: rank stinger cards, persistent left
    rank rail that fills as ranks play, multi-color brainrot top title +
    *"(last one is insane)"*, per-clip meme micro-captions ("BRO GOT COOKED"), camera-shake
-   + punch-in on every clip, **slow-mo replay** on the 2 strongest, blur-backdrop framing
-   for horizontal sources, and SFX (whoosh/impact/riser on #1 card/bass on #1 reveal)
+   + punch-in on every clip, **slow-mo replay of the PEAK** on the 2 strongest (≤3.5s of
+   source, starting ~1s before the fused peak), blur-backdrop framing for horizontal
+   sources, native clip audio preserved (replays muted), and SFX (whoosh/impact/riser on
+   #1 card/bass on #1 reveal)
 6. writes `ranking_final.mp4`, `title.txt`, `description.txt`, `hashtags.txt`,
    `thumbnail.png` (#1's peak frame), and `rankrot_manifest.json` (full audit: queries,
    layer scores, picked moments) to `workspace/exports/rankrot_<topic>/`

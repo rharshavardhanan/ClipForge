@@ -20,6 +20,12 @@ export const CARD_FRAMES = 21;
 export const FINAL_CARD_FRAMES = 33;
 export const REPLAY_SPEED = 0.5;
 export const REPLAY_FRACTION = 0.6;
+export const REPLAY_MAX_SRC_SEC = 3.5;
+
+/** PURE (mirror): source frames a replay re-shows. */
+export function replaySrcFrames(clipDurationInFrames: number, fps: number): number {
+  return Math.max(1, Math.round(Math.min(clipDurationInFrames * REPLAY_FRACTION, REPLAY_MAX_SRC_SEC * fps)));
+}
 
 export interface RankRotRenderItem {
   file: string;          // absolute path of the trimmed moment
@@ -27,6 +33,8 @@ export interface RankRotRenderItem {
   durationSec: number;   // moment duration
   microTitle: string;
   replay: boolean;
+  /** Fused-peak time RELATIVE to the moment start — the replay re-shows the peak. */
+  peakSec?: number;
 }
 
 export type RankRotSfxPlan = { whooshes: number[]; impacts: number[]; riser: number | null; bass: number | null };
@@ -47,7 +55,7 @@ export function buildRankRotSfxPlan(items: RankRotRenderItem[], fps: number): Ra
     if (final) plan.bass = clipT;
     const clipFrames = Math.max(1, Math.round(item.durationSec * fps));
     from += clipFrames;
-    if (item.replay) from += Math.max(1, Math.round((clipFrames * REPLAY_FRACTION) / REPLAY_SPEED));
+    if (item.replay) from += Math.max(1, Math.round(replaySrcFrames(clipFrames, fps) / REPLAY_SPEED));
   });
   return plan;
 }
@@ -75,13 +83,23 @@ export function buildRankRotProps(
   topTitle: string, subtext: string, accentColor: string,
 ) {
   return {
-    items: items.map((it, i) => ({
-      videoPath: stagedRel[i],
-      rank: it.rank,
-      durationInFrames: Math.max(1, Math.round(it.durationSec * fps)),
-      microTitle: it.microTitle,
-      replay: it.replay,
-    })),
+    items: items.map((it, i) => {
+      const durationInFrames = Math.max(1, Math.round(it.durationSec * fps));
+      // Replay re-shows the PEAK: start ~1s before it, keeping the replay span inside the clip.
+      const replaySpan = replaySrcFrames(durationInFrames, fps);
+      const replayFrom = Math.max(0, Math.min(
+        Math.round(((it.peakSec ?? 0) - 1) * fps),
+        durationInFrames - replaySpan,
+      ));
+      return {
+        videoPath: stagedRel[i],
+        rank: it.rank,
+        durationInFrames,
+        microTitle: it.microTitle,
+        replay: it.replay,
+        ...(it.replay ? { replayFrom } : {}),
+      };
+    }),
     fps, topTitle, subtext, accentColor,
   };
 }

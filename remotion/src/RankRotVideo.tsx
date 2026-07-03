@@ -67,6 +67,7 @@ const ClipLayer: React.FC<{ item: RankRotItem; replay: boolean; accent: string }
           src={src}
           muted={replay}
           playbackRate={replay ? 0.5 : 1}
+          startFrom={replay ? item.replayFrom ?? 0 : 0}
           style={{ width: '100%', height: '100%', objectFit: 'contain' }}
         />
       </AbsoluteFill>
