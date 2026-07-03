@@ -38,7 +38,7 @@ import { mixSfx } from '../../sfx/mixer.js';
 import { writeExports } from '../../export/exporter.js';
 import { buildSeoPack, type SeoPack } from '../../export/seo.js';
 import { pickThumbnailTime, generateThumbnail } from '../../export/thumbnail.js';
-import { MODE_PROFILES, resolveMode } from '../../modes.js';
+import { MODE_PROFILES, resolveMode, resolveFraming } from '../../modes.js';
 import { buildEditPlan, buildSourceSignals, truncateHook } from '../../avss/editPlan.js';
 import { regulate } from '../../avss/regulator.js';
 import { generateVariants, scoreVariants, pickWinner, type VariantPins } from '../../avss/variants.js';
@@ -472,7 +472,7 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
       const fullPath = join(clipsDir, `${clip.clip_id}_full.mp4`);
       await extractFullFrame(source.videoPath, clip.start, clip.end, fullPath);
       const { mode, track, faces } = await planFraming(fullPath, source.meta.width, source.meta.height, 3,
-        opts.framing === 'crop' || opts.framing === 'blur' ? opts.framing : undefined);
+        resolveFraming(opts.framing, profile));
 
       const accentColor = sentimentColor(clip.sentiment, opts.accent);
 

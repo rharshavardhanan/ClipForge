@@ -25,6 +25,8 @@ export interface ModeProfile {
   zoomIntensity: number;
   /** Semantic sub-scores this mode ranks up. */
   priorities: (keyof SemanticScores)[];
+  /** Framing default when --framing is auto/absent; undefined = auto decision engine. */
+  framing?: 'crop' | 'blur';
 }
 
 export const MODE_PROFILES: Record<ContentMode, ModeProfile> = {
@@ -35,6 +37,7 @@ export const MODE_PROFILES: Record<ContentMode, ModeProfile> = {
     brollDefault: false,
     maxBroll: 1,
     zoomIntensity: 1,
+    framing: 'crop',
     priorities: ['humor', 'surprise', 'emotional_intensity', 'argument_peak'],
   },
   mindcuts: {
@@ -83,4 +86,10 @@ export function detectMode(meta: VideoMetadata, semantic: SemanticWindow[]): Con
 export function resolveMode(flag: string | undefined, meta: VideoMetadata, semantic: SemanticWindow[]): ModeProfile {
   if (flag === 'clippies' || flag === 'mindcuts') return MODE_PROFILES[flag];
   return MODE_PROFILES[detectMode(meta, semantic)];
+}
+
+/** PURE: --framing flag + mode profile → forced framing ('crop'|'blur') or undefined (auto). */
+export function resolveFraming(flag: string | undefined, profile: ModeProfile): 'crop' | 'blur' | undefined {
+  if (flag === 'crop' || flag === 'blur') return flag;
+  return profile.framing;
 }
