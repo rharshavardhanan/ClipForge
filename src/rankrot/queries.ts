@@ -7,17 +7,18 @@ import { askGeminiJson } from '../broll/llmJson.js';
 
 export const QUERY_COUNT = 5;
 
-/** PURE: deterministic template variations for a topic. */
+/** PURE: deterministic template variations for a topic — biased toward popular REAL footage,
+ *  including TikTok reposts (TikTok itself has no search API; its hits live on YouTube). */
 export function templateQueries(topic: string): string[] {
   const t = topic.trim().replace(/\s+/g, ' ');
   const bare = t.replace(/^best\s+|^top\s+\d+\s+/i, '');
   const set = [
     t,
-    `crazy ${bare}`,
-    `insane ${bare}`,
-    `${bare} viral moments`,
-    `best ${bare} ever`,
+    `${bare} viral tiktok`,
+    `funniest ${bare} caught on camera`,
     `${bare} shorts`,
+    `best ${bare} ever`,
+    `${bare} viral moments`,
   ];
   return [...new Set(set.map((q) => q.toLowerCase()))].slice(0, QUERY_COUNT + 1);
 }
@@ -26,7 +27,7 @@ export function templateQueries(topic: string): string[] {
 export function buildQueryPrompt(topic: string): string {
   return `Topic: "${topic}"
 
-Generate ${QUERY_COUNT} DIFFERENT YouTube search queries that find short viral clips of this topic (the kind that appear in "Top 5" ranking Shorts). Vary the wording (crazy/insane/viral/poster/etc), 2-6 words each, no hashtags, no quotes.
+Generate ${QUERY_COUNT} DIFFERENT YouTube search queries that find the MOST POPULAR short clips of this topic — REAL footage people actually filmed (viral TikTok reposts, caught-on-camera moments, famous clips). NEVER phrasing that attracts AI-generated/animated content. Vary the wording (viral/funniest/famous/caught on camera/tiktok), 2-6 words each, no hashtags, no quotes.
 
 Return {"queries":["...", ...]} and nothing else.`;
 }

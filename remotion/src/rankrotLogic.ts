@@ -7,6 +7,8 @@ export type RankRotItem = {
   durationInFrames: number; // moment length at comp fps
   microTitle: string;       // meme caption ("BRO GOT COOKED")
   replay: boolean;          // elite clip → slow-mo replay after first play
+  /** Source frame the replay starts from (slow-mo re-shows the PEAK, not the whole clip). */
+  replayFrom?: number;
 };
 
 export type RankRotProps = {
@@ -27,15 +29,22 @@ export type RankRotSegment = {
 export const CARD_FRAMES = 21;        // 0.7s @30 — rank stinger
 export const FINAL_CARD_FRAMES = 33;  // #1 card holds longer (anticipation)
 export const REPLAY_SPEED = 0.5;      // slow-mo replay rate
-export const REPLAY_FRACTION = 0.6;   // replay covers the first 60% of the moment
+export const REPLAY_FRACTION = 0.6;   // replay covers up to 60% of the moment…
+export const REPLAY_MAX_SRC_SEC = 3.5; // …but never more than ~3.5s of source (peak only)
+
+/** PURE: source frames a replay re-shows (60% of the moment, capped at 3.5s of source). */
+export function replaySrcFrames(clipDurationInFrames: number, fps: number): number {
+  return Math.max(1, Math.round(Math.min(clipDurationInFrames * REPLAY_FRACTION, REPLAY_MAX_SRC_SEC * fps)));
+}
 export const SHAKE_FRAMES = 8;        // camera-shake jitter at each clip start
 export const PUNCH_IN_FRAMES = 10;    // punch-in ease at each clip start
 
 /** Word palette for the multi-color brainrot top title. */
 export const TITLE_PALETTE = ['#FFE81A', '#FF3D5A', '#41FF6B', '#4DC9FF', '#FF9838'];
 
-/** PURE: card → clip → (replay for elite clips), per item, countdown order. */
-export function buildRankRotTimeline(items: RankRotItem[]): RankRotSegment[] {
+/** PURE: card → clip → (replay for elite clips), per item, countdown order.
+ *  fps only affects the replay source cap (defaults to the 30fps comp). */
+export function buildRankRotTimeline(items: RankRotItem[], fps = 30): RankRotSegment[] {
   const segs: RankRotSegment[] = [];
   let from = 0;
   items.forEach((item, itemIndex) => {
@@ -46,7 +55,7 @@ export function buildRankRotTimeline(items: RankRotItem[]): RankRotSegment[] {
     segs.push({ kind: 'clip', itemIndex, from, durationInFrames: item.durationInFrames });
     from += item.durationInFrames;
     if (item.replay) {
-      const dur = Math.max(1, Math.round((item.durationInFrames * REPLAY_FRACTION) / REPLAY_SPEED));
+      const dur = Math.max(1, Math.round(replaySrcFrames(item.durationInFrames, fps) / REPLAY_SPEED));
       segs.push({ kind: 'replay', itemIndex, from, durationInFrames: dur });
       from += dur;
     }

@@ -29,35 +29,48 @@ describe('normalizeCurve / fuseCurves', () => {
   });
 });
 
-describe('momentWindow', () => {
-  it('short sources are kept whole', () => {
+describe('momentWindow (adaptive arcs, 4-12s)', () => {
+  it('sources at or under the max are kept whole (they ARE the arc)', () => {
     expect(momentWindow(curve([1, 2, 3]), 6)).toEqual({ start: 0, end: 6 });
+    expect(momentWindow(curve([1, 2, 3]), MAX_MOMENT_SEC)).toEqual({ start: 0, end: MAX_MOMENT_SEC });
   });
-  it('window brackets the fused peak with pre-roll, inside the clip', () => {
-    const vs = new Array(60).fill(0.1);
-    vs[40] = 1; // peak at t=40 of a 60s clip
+
+  it('each clip gets ITS OWN length — a long arc gets more time than an instant', () => {
+    const instant = new Array(60).fill(0.05);
+    instant[30] = 1; // isolated spike
+    const arc = new Array(60).fill(0.05);
+    for (let t = 26; t <= 38; t++) arc[t] = 0.8; // sustained action
+    arc[30] = 1;
+    const wInstant = momentWindow(curve(instant), 60);
+    const wArc = momentWindow(curve(arc), 60);
+    expect(wArc.end - wArc.start).toBeGreaterThan(wInstant.end - wInstant.start);
+    expect(wInstant.end - wInstant.start).toBeGreaterThanOrEqual(MIN_MOMENT_SEC);
+    expect(wArc.end - wArc.start).toBeLessThanOrEqual(MAX_MOMENT_SEC);
+  });
+
+  it('grows BACKWARD for context: hot build-up before the peak is included', () => {
+    const vs = new Array(60).fill(0.05);
+    for (let t = 20; t <= 30; t++) vs[t] = 0.7; // build-up (cause)
+    vs[30] = 1;                                  // impact
     const w = momentWindow(curve(vs), 60);
-    expect(w.start).toBeLessThan(40);
-    expect(w.end).toBeGreaterThan(40);
-    expect(w.end - w.start).toBeGreaterThanOrEqual(MIN_MOMENT_SEC);
-    expect(w.end - w.start).toBeLessThanOrEqual(MAX_MOMENT_SEC);
-    expect(w.start).toBeGreaterThanOrEqual(0);
-    expect(w.end).toBeLessThanOrEqual(60);
+    expect(w.start).toBeLessThanOrEqual(24);     // several seconds of context kept
+    expect(w.end).toBeGreaterThan(30);           // and the aftermath
   });
-  it('sustained heat after the peak extends the window toward 8s', () => {
-    const hot = new Array(60).fill(0.1);
-    for (let t = 30; t < 45; t++) hot[t] = 1; // long hot plateau
-    const spike = new Array(60).fill(0.1);
-    spike[30] = 1; // single instant
-    const wHot = momentWindow(curve(hot), 60);
-    const wSpike = momentWindow(curve(spike), 60);
-    expect(wHot.end - wHot.start).toBeGreaterThan(wSpike.end - wSpike.start);
+
+  it('tail pad: the window resolves PAST the last hot sample (no mid-action cut)', () => {
+    const vs = new Array(60).fill(0.05);
+    for (let t = 30; t <= 34; t++) vs[t] = 1;    // action t=30..34
+    const w = momentWindow(curve(vs), 60);
+    expect(w.end).toBeGreaterThan(34.5);         // ends after the action, not on it
   });
-  it('peak near the clip end clamps the window inside the clip', () => {
-    const vs = new Array(30).fill(0.1);
-    vs[29] = 1;
-    const w = momentWindow(curve(vs), 30);
+
+  it('clamps inside the source and respects min/max', () => {
+    const nearEnd = new Array(30).fill(0.05);
+    nearEnd[29] = 1;
+    const w = momentWindow(curve(nearEnd), 30);
     expect(w.end).toBeLessThanOrEqual(30);
     expect(w.start).toBeGreaterThanOrEqual(0);
+    expect(w.end - w.start).toBeGreaterThanOrEqual(MIN_MOMENT_SEC);
+    expect(w.end - w.start).toBeLessThanOrEqual(MAX_MOMENT_SEC);
   });
 });

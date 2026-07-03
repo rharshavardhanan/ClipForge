@@ -64,9 +64,13 @@ describe('collapseDupes', () => {
 });
 
 describe('virality', () => {
-  it('parseVirality fills valid entries over the fallback', () => {
-    const out = parseVirality({ scores: [{ i: 0, score: 9 }, { i: 5, score: 10 }, { i: 1, score: 99 }] }, 2, [5, 5]);
-    expect(out).toEqual([9, 10]); // i=5 out of range ignored; 99 clamped to 10
+  it('parseVirality fills valid entries over the fallback and reads is_ai flags', () => {
+    const out = parseVirality({ scores: [
+      { i: 0, score: 9, is_ai: false }, { i: 5, score: 10 }, { i: 1, score: 99, is_ai: true },
+    ] }, 2, [5, 5]);
+    expect(out.scores).toEqual([9, 10]); // i=5 out of range ignored; 99 clamped to 10
+    expect(out.aiFlags).toEqual([false, true]);
+    expect(parseVirality(null, 2, [5, 5]).aiFlags).toEqual([false, false]);
   });
   it('viewFallback log-scales views, neutral 5 when unknown', () => {
     const [tiny, huge, unknown] = viewFallback([100, 50_000_000, undefined]);

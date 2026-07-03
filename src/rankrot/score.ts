@@ -154,27 +154,32 @@ export function collapseDupes<T extends { hashes: bigint[]; title: string; provi
 
 // ---- virality: one Gemini Flash batch call (spec layer 4) ----
 
-/** PURE: virality prompt over the whole pool. */
+/** PURE: virality prompt over the whole pool — also flags AI-generated slop. */
 export function buildViralityPrompt(items: { title: string; channel?: string; durationSec: number }[], topic: string): string {
   const list = items.map((c, i) => `${i}: "${c.title}"${c.channel ? ` — ${c.channel}` : ''} (${Math.round(c.durationSec)}s)`).join('\n');
-  return `Topic: "${topic}". These clips are candidates for a Top-5 ranking Short.
+  return `Topic: "${topic}". These clips are candidates for a Top-5 ranking Short. We ONLY rank REAL footage — never AI-generated, animated, or CGI content.
 
 ${list}
 
-Rate EACH clip 1-10 for viral potential based on: skill, shock, uniqueness, replayability, hype. Judge from the title/channel. Be decisive — spread your scores.
+For EACH clip:
+- score 1-10 for viral potential: skill, shock, uniqueness, replayability, hype. Judge from the title/channel. Be decisive — spread your scores.
+- is_ai: true if the title/channel suggests AI-generated, animated, CGI, or synthetic content.
 
-Return {"scores":[{"i":<index>,"score":<1-10>}]} covering every index.`;
+Return {"scores":[{"i":<index>,"score":<1-10>,"is_ai":<bool>}]} covering every index.`;
 }
 
-/** PURE: parse virality scores; missing/invalid entries → fallback value. */
-export function parseVirality(raw: unknown, n: number, fallback: number[]): number[] {
-  const out = [...fallback];
+export interface ViralityResult { scores: number[]; aiFlags: boolean[]; }
+
+/** PURE: parse virality scores + AI flags; missing/invalid entries → fallback score, not-AI. */
+export function parseVirality(raw: unknown, n: number, fallback: number[]): ViralityResult {
+  const out: ViralityResult = { scores: [...fallback], aiFlags: new Array(n).fill(false) };
   const scores = (raw as { scores?: unknown })?.scores;
   if (!Array.isArray(scores)) return out;
   for (const s of scores) {
-    const { i, score } = (s ?? {}) as Record<string, unknown>;
+    const { i, score, is_ai } = (s ?? {}) as Record<string, unknown>;
     if (typeof i === 'number' && typeof score === 'number' && i >= 0 && i < n) {
-      out[i] = Math.max(0, Math.min(10, score));
+      out.scores[i] = Math.max(0, Math.min(10, score));
+      if (typeof is_ai === 'boolean') out.aiFlags[i] = is_ai;
     }
   }
   return out;
@@ -187,7 +192,7 @@ export function viewFallback(views: (number | undefined)[]): number[] {
 
 export async function viralityScores(
   items: { title: string; channel?: string; durationSec: number; viewCount?: number }[], topic: string,
-): Promise<number[]> {
+): Promise<ViralityResult> {
   const fallback = viewFallback(items.map((c) => c.viewCount));
   const raw = await askGeminiJson({
     system: 'You are a ruthless viral-shorts curator. Return ONLY valid JSON.',
@@ -198,8 +203,8 @@ export async function viralityScores(
         scores: {
           type: 'array',
           items: {
-            type: 'object', additionalProperties: false, required: ['i', 'score'],
-            properties: { i: { type: 'integer' }, score: { type: 'number' } },
+            type: 'object', additionalProperties: false, required: ['i', 'score', 'is_ai'],
+            properties: { i: { type: 'integer' }, score: { type: 'number' }, is_ai: { type: 'boolean' } },
           },
         },
       },
