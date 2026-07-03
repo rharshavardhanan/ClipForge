@@ -33,6 +33,7 @@ import { writeExports } from '../../export/exporter.js';
 import { buildSeoPack, type SeoPack } from '../../export/seo.js';
 import { pickThumbnailTime, generateThumbnail } from '../../export/thumbnail.js';
 import { MODE_PROFILES, resolveMode } from '../../modes.js';
+import { truncateHook } from '../../avss/editPlan.js';
 import { acquireBroll } from '../../broll/acquire.js';
 import { filterCallouts } from '../../broll/planner.js';
 import { logger } from '../../utils/logger.js';
@@ -48,9 +49,7 @@ export function resolveJobId(url: string): string {
 
 /** PURE: truncate a hook moment to <=8 words for the hook card, appending an ellipsis if cut. */
 export function hookCardText(s: string): string {
-  const words = s.trim().split(/\s+/).filter(Boolean);
-  if (words.length <= 8) return words.join(' ');
-  return words.slice(0, 7).join(' ') + '…';
+  return truncateHook(s);
 }
 
 /** PURE: short, stable id for a batch of URLs (order-independent). */
