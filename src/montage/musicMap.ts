@@ -74,7 +74,7 @@ export async function buildMusicMap(audioPath: string): Promise<MusicMap> {
   // A montage needs a climax: no detectable drop → synthesize one at 60% of the track.
   if (drops.length === 0) drops = [{ time: duration * 0.6, strength: 1 }];
   return {
-    bpm: mt.tempo, beats: mt.beats, drops, energy,
+    bpm: Number(mt.tempo), beats: mt.beats, drops, energy,
     sections: classifySections(drops, duration), duration,
   };
 }
