@@ -8,6 +8,7 @@ import { runAll, runBatch } from './commands/all.js';
 import { runIngest } from './commands/ingest.js';
 import { runRankingRender } from './commands/rank.js';
 import { runAuthYoutube, runUpload } from './commands/publish.js';
+import { runRankRot } from '../rankrot/pipeline.js';
 import { runUi } from './commands/ui.js';
 import { isLocalInput } from '../ingest/localFile.js';
 import { logger } from '../utils/logger.js';
@@ -172,6 +173,28 @@ program.command('upload')
       await runUpload(dir, {
         clips: o.clips, privacy: o.privacy, dryRun: o.dryRun, force: o.force, json: o.json,
         title: o.title, description: o.description, channel: o.channel,
+      });
+    } catch (e) { logger.error((e as Error).stack ?? String(e)); process.exit(1); }
+  });
+
+program.command('rankrot')
+  .description('Topic → internet clip harvest → AI ranking → brainrot Top-N countdown Short (Gemini + local signals, no Claude)')
+  .argument('<topic>', 'e.g. "best basketball dunks", "craziest fails"')
+  .option('--top <n>', 'countdown size', (v) => parseInt(v, 10), 5)
+  .option('--harvest <n>', 'max clips to harvest (30-50 recommended)', (v) => parseInt(v, 10), 40)
+  .option('--accent <hex>', 'accent color for rank cards/rail', '#FFE81A')
+  .option('--no-sfx', 'disable SFX (whoosh/impact/riser/bass) under the countdown')
+  .option('--sfx-volume <v>', 'SFX level 0-1', (v) => parseFloat(v), 0.6)
+  .option('--sfx-dir <p>', 'SFX library folder', process.env.SFX_DIR ?? './sfx')
+  .option('--cache-dir <p>', 'harvest cache folder', process.env.RANKROT_DIR ?? './rankrot_cache')
+  .option('--no-replays', 'disable slow-mo replays on the strongest clips')
+  .action(async (topic, o) => {
+    await preflightOrExit();
+    try {
+      await runRankRot(topic, {
+        top: Math.max(2, Math.min(10, o.top)), harvest: o.harvest, accent: o.accent,
+        sfx: o.sfx, sfxVolume: o.sfxVolume, sfxDir: o.sfxDir,
+        cacheDir: o.cacheDir, replays: o.replays,
       });
     } catch (e) { logger.error((e as Error).stack ?? String(e)); process.exit(1); }
   });

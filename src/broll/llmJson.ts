@@ -62,6 +62,16 @@ async function askClaude(opts: AskJsonOpts, env: NodeJS.ProcessEnv): Promise<unk
   }
 }
 
+/** Gemini-only JSON ask — for engines that must not use Claude (RankRot, per spec). */
+export async function askGeminiJson(opts: AskJsonOpts, env: NodeJS.ProcessEnv = process.env): Promise<unknown | null> {
+  const keys = loadGeminiKeys(env);
+  if (keys.length === 0) {
+    logger.warn(`[${opts.label}] no GEMINI_API_KEYS — skipping`);
+    return null;
+  }
+  return askGemini(opts, keys[0], env);
+}
+
 async function askGemini(opts: AskJsonOpts, key: string, env: NodeJS.ProcessEnv): Promise<unknown | null> {
   try {
     const model = new GoogleGenerativeAI(key).getGenerativeModel({

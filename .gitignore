@@ -8,3 +8,4 @@ remotion/public/
 .DS_Store
 remotion/props_*.json
 broll_cache/
+rankrot_cache/

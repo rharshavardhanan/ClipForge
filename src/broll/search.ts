@@ -33,21 +33,32 @@ export function parseSearchOutput(stdout: string): BrollCandidate[] {
         url: typeof j.url === 'string' ? j.url : `https://www.youtube.com/watch?v=${id}`,
         channel: typeof j.channel === 'string' ? j.channel : (typeof j.uploader === 'string' ? j.uploader : undefined),
         durationSec: typeof j.duration === 'number' ? j.duration : 0,
+        ...(typeof j.view_count === 'number' ? { viewCount: j.view_count } : {}),
       });
     } catch { /* skip malformed line */ }
   }
   return out;
 }
 
-/** PURE: drop the source video itself and out-of-range durations (0 = unknown, kept). */
-export function filterCandidates(cands: BrollCandidate[], opts: { excludeIds?: string[] } = {}): BrollCandidate[] {
-  const excluded = new Set(opts.excludeIds ?? []);
-  return cands.filter((c) => !excluded.has(c.id)
-    && (c.durationSec === 0 || (c.durationSec >= MIN_SOURCE_SEC && c.durationSec <= MAX_SOURCE_SEC)));
+export interface SearchOpts {
+  excludeIds?: string[];
+  n?: number;
+  /** Duration bounds (seconds); 0-duration (unknown) candidates are always kept. */
+  minSec?: number;
+  maxSec?: number;
 }
 
-/** Search YouTube for B-roll candidates. Never throws; [] on any failure. */
-export async function searchBroll(query: string, opts: { excludeIds?: string[]; n?: number } = {}): Promise<BrollCandidate[]> {
+/** PURE: drop the source video itself and out-of-range durations (0 = unknown, kept). */
+export function filterCandidates(cands: BrollCandidate[], opts: SearchOpts = {}): BrollCandidate[] {
+  const excluded = new Set(opts.excludeIds ?? []);
+  const min = opts.minSec ?? MIN_SOURCE_SEC;
+  const max = opts.maxSec ?? MAX_SOURCE_SEC;
+  return cands.filter((c) => !excluded.has(c.id)
+    && (c.durationSec === 0 || (c.durationSec >= min && c.durationSec <= max)));
+}
+
+/** Search YouTube for clip candidates. Never throws; [] on any failure. */
+export async function searchBroll(query: string, opts: SearchOpts = {}): Promise<BrollCandidate[]> {
   try {
     const { stdout } = await run('yt-dlp', buildSearchArgs(query, opts.n ?? SEARCH_RESULTS), { stallMs: 60_000 });
     return filterCandidates(parseSearchOutput(stdout), opts);
