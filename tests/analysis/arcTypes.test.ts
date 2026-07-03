@@ -70,3 +70,35 @@ describe('arcScore', () => {
     expect(arcScore({ confidence: 1, components: full, reactionAfterPeak: true })).toBe(1);
   });
 });
+
+// ---- Gemini-shape normalization (free-tier responses are structurally loose) ---------------
+import { normalizeArcRaw } from '../../src/analysis/arcTypes.js';
+
+describe('normalizeArcRaw', () => {
+  it('coerces "a-b" string spans and flattened component keys into the canonical shape', () => {
+    const loose = {
+      setup: '12.9-31.3', trigger: '31.3-36.8', escalation: '36.8-57.4',
+      peak: '57.4-77.8', payoff: '77.8-93.6', reaction: '104.3-110.3',
+      reactionAfterPeak: true,
+    };
+    const v = validateArc(normalizeArcRaw(loose), 400);
+    expect(v).not.toBeNull();
+    expect(v?.components.setup).toEqual({ start: 12.9, end: 31.3 });
+    expect(v?.components.reaction).toEqual({ start: 104.3, end: 110.3 });
+    expect(v?.reactionAfterPeak).toBe(true);
+  });
+  it('defaults missing confidence to the 0.5 neutral prior and synopsis to a placeholder', () => {
+    const v = validateArc(normalizeArcRaw({ components: { setup: '1-5', peak: '5-9' } }), 100);
+    expect(v?.confidence).toBe(0.5);
+    expect(v?.synopsis.length).toBeGreaterThan(0);
+  });
+  it('coerces string-number span fields and string bounds', () => {
+    const n: any = normalizeArcRaw({ synopsis: 's', confidence: 0.7, components: { peak: { start: '5', end: '9' } }, bounds: '2-20' });
+    expect(n.components.peak).toEqual({ start: 5, end: 9 });
+    expect(n.bounds).toEqual({ start: 2, end: 20 });
+  });
+  it('leaves garbage alone (still rejected downstream)', () => {
+    expect(validateArc(normalizeArcRaw({ junk: true }), 100)).toBeNull();
+    expect(normalizeArcRaw(null)).toBeNull();
+  });
+});
