@@ -51,6 +51,8 @@ export function completionPrompt(opts: {
   priorArc?: ArcLabel;
   mode: ContentMode;
   hasImages: boolean;
+  /** Mode envelope max — stated so the model finds arcs that FIT (longer arcs are rejected). */
+  maxSec?: number;
 }): string {
   const transcript = opts.contextSegments
     .map((s) => `[${s.start.toFixed(1)}-${s.end.toFixed(1)}] ${s.text}`).join('\n');
@@ -59,6 +61,7 @@ export function completionPrompt(opts: {
     'Identify ALL SIX micro-story components inside or around it: setup, trigger, escalation, peak, payoff, reaction.',
     'Components may be brief (>=0.5s) or overlap/nest. Times are source-absolute seconds.',
     'Propose bounds: expand backward at least 3s to include the cause/setup and forward at least 3s to include the result/reaction when the story is incomplete. Context beats shortness.',
+    ...(opts.maxSec ? [`HARD LIMIT: the final clip can be AT MOST ${opts.maxSec} seconds long. All six components AND the bounds must fit inside one ${opts.maxSec}s window — a story that cannot fit is not a valid answer.`] : []),
     'Set reactionAfterPeak true when a clear reaction FOLLOWS the peak.',
     'Return ONLY JSON in EXACTLY this shape (numbers in seconds, every key shown):',
     '{"synopsis":"one line","confidence":0.8,"reactionAfterPeak":true,'
@@ -101,7 +104,9 @@ export interface BoundsCtx {
  *  expansions; a used-range collision pulls the colliding edge to the range
  *  boundary, and if that cuts into any component span the candidate is rejected;
  *  then the sentence-aware clamp applies within the mode envelope. */
-export function resolveBounds(c: ArcCompletion, ctx: BoundsCtx): { start: number; end: number } | { reject: 'overlap' } {
+export function resolveBounds(
+  c: ArcCompletion, ctx: BoundsCtx,
+): { start: number; end: number } | { reject: 'overlap' | 'envelope' } {
   const outer = arcOuterSpan(c.components);
   if (!outer) return { reject: 'overlap' };                    // defensive: parse guarantees >=1 span
   let start = Math.max(0, Math.min(c.bounds.start, outer.start));
@@ -113,7 +118,12 @@ export function resolveBounds(c: ArcCompletion, ctx: BoundsCtx): { start: number
     else return { reject: 'overlap' };                         // range straddles a component
   }
   if (start > outer.start || end < outer.end) return { reject: 'overlap' }; // a component got cut
-  return clampToSentences(start, end, ctx.segments, ctx.envelope);
+  const clamped = clampToSentences(start, end, ctx.segments, ctx.envelope);
+  // The envelope/sentence clamp is a HARD constraint — an arc it cannot contain
+  // must be rejected, never silently truncated into a story missing its reaction
+  // (live-smoke bug: a 97s arc exported "complete" with the reaction cut off).
+  if (clamped.start > outer.start || clamped.end < outer.end) return { reject: 'envelope' };
+  return clamped;
 }
 
 /** PURE: STRICT 6/6 gate (user mandate). Null completion → arc-label-failed. */
@@ -130,6 +140,8 @@ export interface CompleteArcOpts {
   priorArc?: ArcLabel;
   mode: ContentMode;
   durationSec: number;
+  /** Mode envelope max, stated in the prompt. */
+  maxSec?: number;
   /** Test seam; default askVisionJson. */
   ask?: AskVisionFn;
 }
@@ -141,6 +153,7 @@ export async function completeArc(opts: CompleteArcOpts): Promise<ArcCompletion 
     prompt: completionPrompt({
       window: opts.window, contextSegments: opts.segments, evidence: opts.evidence,
       priorArc: opts.priorArc, mode: opts.mode, hasImages: opts.images.length > 0,
+      maxSec: opts.maxSec,
     }),
     schema: ARC_COMPLETE_SCHEMA as unknown as Record<string, unknown>,
     label: `arc-complete ${opts.window.start.toFixed(0)}-${opts.window.end.toFixed(0)}`,

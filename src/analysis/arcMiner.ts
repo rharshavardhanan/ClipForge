@@ -49,13 +49,14 @@ export const ARC_MINE_SCHEMA = {
 };
 
 /** PURE: the mining prompt for one chunk. */
-export function miningPrompt(chunk: TranscriptChunk, evidence: string, mode: ContentMode): string {
+export function miningPrompt(chunk: TranscriptChunk, evidence: string, mode: ContentMode, maxSpanSec?: number): string {
   const transcript = chunk.segments.map((s) => `[${s.start.toFixed(1)}-${s.end.toFixed(1)}] ${s.text}`).join('\n');
   return [
     `Find 0-4 COMPLETE micro-stories in this ${mode} source segment.`,
     'A micro-story has ALL SIX components: setup, trigger, escalation, peak, payoff, reaction.',
     'Components may be brief (>=0.5s) or overlap/nest (a trigger inside setup, escalation coinciding with peak) — identify all six or omit the story.',
     `Mode vocabulary: ${MODE_VOCAB[mode]}`,
+    ...(maxSpanSec ? [`HARD LIMIT: each micro-story must span at most ${maxSpanSec} seconds from setup start to reaction end — longer stories are rejected downstream.`] : []),
     'Times are source-absolute seconds. Set reactionAfterPeak true when a clear reaction FOLLOWS the peak (weight those stories higher).',
     'Return ONLY JSON in EXACTLY this shape (numbers in seconds, every key shown):',
     '{"arcs":[{"synopsis":"one line","confidence":0.8,"reactionAfterPeak":true,'
@@ -87,6 +88,8 @@ export interface MineOpts {
   cachePath: string;
   durationSec: number;
   mode: ContentMode;
+  /** Mode envelope max, stated in the prompt so mined stories fit. */
+  maxSpanSec?: number;
   /** Test seam; default askVisionJson (text-only here). */
   ask?: AskVisionFn;
 }
@@ -103,7 +106,7 @@ export async function mineArcs(
     if (!labels) {
       const raw = await ask({
         system: 'You are a top YouTube Shorts story editor. You find complete micro-stories, never isolated moments.',
-        prompt: miningPrompt(chunk, evidenceFor(chunk), opts.mode),
+        prompt: miningPrompt(chunk, evidenceFor(chunk), opts.mode, opts.maxSpanSec),
         schema: ARC_MINE_SCHEMA as unknown as Record<string, unknown>,
         label: `arc-mine ${key}`,
       });
