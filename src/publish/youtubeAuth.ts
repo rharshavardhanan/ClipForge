@@ -10,7 +10,10 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { logger } from '../utils/logger.js';
 
-const SCOPES = 'https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly';
+// yt-analytics.readonly powers `clipforge stats` (retention/completion/shares).
+// Tokens minted before it was added still upload fine but produce partial stats —
+// re-run `clipforge auth youtube` to grant it.
+const SCOPES = 'https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly https://www.googleapis.com/auth/yt-analytics.readonly';
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 
 export interface YtChannel { channel_id: string; title: string; refresh_token: string; }

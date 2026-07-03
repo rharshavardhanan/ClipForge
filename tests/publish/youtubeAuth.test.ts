@@ -17,6 +17,7 @@ describe('buildAuthUrl', () => {
     expect(u.searchParams.get('redirect_uri')).toBe('http://127.0.0.1:9999');
     expect(u.searchParams.get('scope')).toContain('youtube.upload');
     expect(u.searchParams.get('scope')).toContain('youtube.readonly');
+    expect(u.searchParams.get('scope')).toContain('yt-analytics.readonly');
     expect(u.searchParams.get('access_type')).toBe('offline');
     expect(u.searchParams.get('prompt')).toBe('consent');
   });
