@@ -17,6 +17,7 @@ export async function POST(req: NextRequest) {
   // v6 content mode + contextual B-roll (tri-state: on / off / mode default)
   if (body.mode === 'clippies' || body.mode === 'mindcuts') args.push('--mode', body.mode);
   if (body.framing === 'crop' || body.framing === 'blur') args.push('--framing', body.framing);
+  if (body.aspect === '9:16' || body.aspect === '3:4') args.push('--aspect', body.aspect);
   if (body.broll === true) args.push('--broll');
   if (body.broll === false) args.push('--no-broll');
   if (PRESETS.has(body.style)) args.push('--style', body.style);

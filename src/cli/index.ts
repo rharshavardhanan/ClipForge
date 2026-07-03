@@ -12,6 +12,7 @@ import { runStats } from './commands/stats.js';
 import { runRankRot } from '../rankrot/pipeline.js';
 import { runUi } from './commands/ui.js';
 import { isLocalInput } from '../ingest/localFile.js';
+import { aspectDims } from '../extraction/aspect.js';
 import { logger } from '../utils/logger.js';
 
 const STYLE_HELP = 'caption preset: mrbeast|hormozi|gadzhi|gaming|podcast|cinematic|minimal|card|bold (default: the mode\'s preset)';
@@ -21,6 +22,7 @@ function addRenderOptions(cmd: Command): Command {
   return cmd
     .option('--mode <m>', 'content mode: auto|clippies|mindcuts (auto = detect per video)', 'auto')
     .option('--framing <f>', 'framing: auto|crop|blur — crop = FULL-SCREEN 9:16 (follows the active speaker, no blur bars), blur = 16:9 over blurred backdrop', 'auto')
+    .option('--aspect <a>', 'output aspect: 9:16 (full portrait) or 3:4', '9:16')
     .option('--style <s>', STYLE_HELP)
     .option('--accent <hex>', 'accent color', '#FFD700')
     .option('--font <name>', 'caption font override: anton|bangers|archivo|montserrat|poppins|inter')
@@ -55,8 +57,12 @@ function renderOpts(o: any) {
     logger.error(`--framing must be auto|crop|blur (got "${o.framing}")`);
     process.exit(1);
   }
+  if (o.aspect) {
+    try { aspectDims(o.aspect); }
+    catch (e) { logger.error((e as Error).message); process.exit(1); }
+  }
   return {
-    top: o.top, minScore: o.minScore, style: o.style, accent: o.accent, framing: o.framing,
+    top: o.top, minScore: o.minScore, style: o.style, accent: o.accent, framing: o.framing, aspect: o.aspect,
     // Caption style resolves inside the pipeline (explicit --style wins, else the mode preset);
     // the fine-tuning flags ride along as overrides.
     captionOverrides: { font: o.font, fontSize: o.fontSize, color: o.captionColor, strokeWidth: o.stroke, position: o.position },

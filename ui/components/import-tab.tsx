@@ -11,6 +11,7 @@ export function ImportTab({ style, onFinished }: { style: StyleConfig; onFinishe
   const [top, setTop] = useState(3);
   const [mode, setMode] = useState('auto');
   const [framing, setFraming] = useState('auto');
+  const [aspect, setAspect] = useState('9:16');
   const [broll, setBroll] = useState('auto');
   const [ranking, setRanking] = useState(false);
   const [deleteSource, setDeleteSource] = useState(false);
@@ -48,6 +49,7 @@ export function ImportTab({ style, onFinished }: { style: StyleConfig; onFinishe
         body: JSON.stringify({
           inputs, top, mode,
           framing: framing === 'auto' ? undefined : framing,
+          aspect: aspect === '9:16' ? undefined : aspect,
           broll: broll === 'auto' ? undefined : broll === 'on',
           style: style.preset, accent: style.accent, music: style.music, zooms: style.zooms,
           font: style.font, fontSize: style.fontSize, position: style.position,
@@ -125,6 +127,13 @@ export function ImportTab({ style, onFinished }: { style: StyleConfig; onFinishe
               <option value="auto">Auto per clip</option>
               <option value="crop">Full-screen 9:16 — follows the speaker</option>
               <option value="blur">Blurred backdrop (16:9 kept whole)</option>
+            </select>
+          </Field>
+
+          <Field label="Aspect" hint="Output composition dims">
+            <select value={aspect} onChange={(e) => setAspect(e.target.value)} className={inputCls}>
+              <option value="9:16">9:16 — full portrait</option>
+              <option value="3:4">3:4 — tall, not full</option>
             </select>
           </Field>
 

@@ -75,6 +75,8 @@ export interface ClipCompositionProps {
   style: 'minimal' | 'card' | 'bold';
   accentColor: string; showHookCard: boolean; hookText: string;
   cropTrack?: CropKeyframe[]; srcW?: number; srcH?: number;
+  /** Output composition dims (aspect flag: 9:16 → 1080x1920, 3:4 → 1080x1440). Absent → default 1080x1920. */
+  outWidth?: number; outHeight?: number;
   /** Full caption style config (SP2). Absent → renderer's legacy bold look. */
   caption?: import('../captions/presets.js').CaptionStyle;
   /** Punch zooms on emphasized moments (EG2). Default true. */

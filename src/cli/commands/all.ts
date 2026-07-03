@@ -28,6 +28,7 @@ import { sentimentColor } from '../../captions/sentimentColor.js';
 import { writeSrt } from '../../captions/srtGenerator.js';
 import { extractFullFrame } from '../../extraction/clipExtractor.js';
 import { planFraming } from '../../extraction/faceTracker.js';
+import { aspectDims } from '../../extraction/aspect.js';
 import { planCallouts, faceAt } from '../../extraction/callouts.js';
 import { render } from '../../captions/remotionRenderer.js';
 import { scanLibrary, pickTrack, sentimentToMood } from '../../music/library.js';
@@ -87,6 +88,8 @@ export interface AllOpts {
   /** Framing: 'crop' = force full-screen 9:16 (active-speaker/face-tracked, center fallback),
    *  'blur' = force 16:9 over blurred backdrop, 'auto'/undefined = per-clip decision. */
   framing?: string;
+  /** Output aspect: '9:16' (full portrait, default) or '3:4' (tall-but-not-full). */
+  aspect?: string;
   /** Contextual B-roll (narrative overlay): true = force on, false = off,
    *  undefined = the mode's default (on for mindcuts). */
   broll?: boolean;
@@ -457,6 +460,7 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
     const finalPath = join(exportsDir, `${clip.clip_id}_final.mp4`);
     const clipsDir = join(WS, 'clips', source.jobId);
     const profile = MODE_PROFILES[source.mode];
+    const dims = aspectDims(opts.aspect ?? '9:16');
 
     try {
       // SEO pack from THIS clip's source metadata (batch runs mix creators).
@@ -472,7 +476,7 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
       const fullPath = join(clipsDir, `${clip.clip_id}_full.mp4`);
       await extractFullFrame(source.videoPath, clip.start, clip.end, fullPath);
       const { mode, track, faces } = await planFraming(fullPath, source.meta.width, source.meta.height, 3,
-        resolveFraming(opts.framing, profile));
+        resolveFraming(opts.framing, profile), dims.ratio);
 
       const accentColor = sentimentColor(clip.sentiment, opts.accent);
 
@@ -535,6 +539,7 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
         zoomIntensity: plan.zoom.intensity,
         zoomTimes: plan.zoom.times,
         framing: mode,
+        outWidth: dims.outW, outHeight: dims.outH,
         ...(mode === 'crop' ? { cropTrack: track, srcW: source.meta.width, srcH: source.meta.height } : {}),
         ...(callouts.length > 0 ? { callouts } : {}),
         ...(overlays.length > 0 ? { broll: overlays } : {}),

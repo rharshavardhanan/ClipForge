@@ -30,6 +30,9 @@ export interface RenderOpts {
   cropTrack?: CropKeyframe[];
   srcW?: number;
   srcH?: number;
+  /** Output composition dims (aspect flag) — absent falls back to the default 1080x1920. */
+  outWidth?: number;
+  outHeight?: number;
   hookText?: string;
   caption?: CaptionStyle;
   zooms?: boolean;
@@ -72,6 +75,8 @@ export function buildProps(
     ...(opts.cropTrack && opts.cropTrack.length > 0 ? { cropTrack: opts.cropTrack } : {}),
     ...(opts.srcW !== undefined ? { srcW: opts.srcW } : {}),
     ...(opts.srcH !== undefined ? { srcH: opts.srcH } : {}),
+    ...(opts.outWidth !== undefined ? { outWidth: opts.outWidth } : {}),
+    ...(opts.outHeight !== undefined ? { outHeight: opts.outHeight } : {}),
     ...(opts.caption ? { caption: opts.caption } : {}),
     ...(opts.framing ? { framing: opts.framing } : {}),
     ...(opts.callouts && opts.callouts.length > 0 ? { callouts: opts.callouts } : {}),
