@@ -14,6 +14,9 @@ export type ClipProps = {
   videoPath: string; words: CaptionWord[]; fps: number; durationInFrames: number;
   style: 'minimal' | 'card' | 'bold'; accentColor: string; showHookCard: boolean; hookText: string;
   cropTrack?: CropKeyframe[]; srcW?: number; srcH?: number;
+  /** Output composition dims (aspect flag: 9:16 → 1080x1920, 3:4 → 1080x1440). Read by
+   *  Root.tsx's calculateMetadata; not consumed inside the component (layout uses useVideoConfig). */
+  outWidth?: number; outHeight?: number;
   caption?: CaptionStyle;
   zooms?: boolean;
   /** Punch-zoom amplitude multiplier (1 = full punch; mindcuts ~0.55 = subtle). */

@@ -18,9 +18,14 @@ export const RemotionRoot: React.FC = () => (
       defaultProps={{
         videoPath: '', words: [], fps: 30, durationInFrames: 300,
         style: 'bold', accentColor: '#FFD700', showHookCard: false, hookText: '',
-        cropTrack: [], srcW: 1080, srcH: 1920,
+        cropTrack: [], srcW: 1080, srcH: 1920, outWidth: 1080, outHeight: 1920,
       } as ClipProps}
-      calculateMetadata={({ props }) => ({ durationInFrames: props.durationInFrames ?? 300, fps: props.fps ?? 30 })}
+      calculateMetadata={({ props }) => ({
+        durationInFrames: props.durationInFrames ?? 300,
+        fps: props.fps ?? 30,
+        width: props.outWidth ?? 1080,
+        height: props.outHeight ?? 1920,
+      })}
     />
     <Composition
       id="RankingVideo"
