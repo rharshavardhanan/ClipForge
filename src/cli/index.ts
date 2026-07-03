@@ -8,6 +8,7 @@ import { runAll, runBatch } from './commands/all.js';
 import { runIngest } from './commands/ingest.js';
 import { runRankingRender } from './commands/rank.js';
 import { runAuthYoutube, runUpload } from './commands/publish.js';
+import { runStats } from './commands/stats.js';
 import { runRankRot } from '../rankrot/pipeline.js';
 import { runUi } from './commands/ui.js';
 import { isLocalInput } from '../ingest/localFile.js';
@@ -175,6 +176,16 @@ program.command('upload')
         title: o.title, description: o.description, channel: o.channel,
       });
     } catch (e) { logger.error((e as Error).stack ?? String(e)); process.exit(1); }
+  });
+
+program.command('stats')
+  .description('Pull real YouTube metrics for uploaded clips — updates the editing policy and promotes ≥70% retention edits to ./elite_templates/')
+  .argument('[exportsDirs...]', 'workspace/exports/<id> directories (default: all)')
+  .option('--channel <c>', 'YouTube channel title or id (required when multiple are connected)')
+  .option('--json', 'print machine-readable results as the last stdout line')
+  .action(async (dirs, o) => {
+    try { await runStats(dirs, { channel: o.channel, json: o.json }); }
+    catch (e) { logger.error((e as Error).stack ?? String(e)); process.exit(1); }
   });
 
 program.command('rankrot')
