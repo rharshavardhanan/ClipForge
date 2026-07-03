@@ -40,7 +40,9 @@ function addRenderOptions(cmd: Command): Command {
     .option('--sfx-volume <v>', 'SFX one-shot level 0-1', (v) => parseFloat(v), 0.6)
     .option('--sfx-dir <p>', 'SFX library folder', process.env.SFX_DIR ?? './sfx')
     .option('--delete-source', 'delete the downloaded source video + intermediates after export (frees disk)')
-    .option('--allow-repeats', 'allow re-exporting moments already used by previous runs of the same video');
+    .option('--allow-repeats', 'allow re-exporting moments already used by previous runs of the same video')
+    .option('--arc-topk <n>', 'candidates given the arc completion + 6/6 story gate (min = --top)', (v) => parseInt(v, 10), 8)
+    .option('--lenient', 'export clips that fail the 6/6 story gate (labeled arc.complete=false)');
 }
 
 /** Common option object for runAll/runBatch from parsed flags. */
@@ -62,6 +64,7 @@ function renderOpts(o: any) {
     music: o.music, musicVolume: o.musicVolume, musicDir: o.musicDir, zooms: o.zooms,
     sfx: o.sfx, sfxVolume: o.sfxVolume, sfxDir: o.sfxDir,
     deleteSource: o.deleteSource, allowRepeats: o.allowRepeats,
+    arcTopk: o.arcTopk, lenient: o.lenient,
   };
 }
 

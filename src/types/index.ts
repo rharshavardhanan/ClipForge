@@ -127,4 +127,6 @@ export interface VideoAnalysis {
   candidates: ClipCandidate[];
   /** Content mode resolved for this video (v6): explicit --mode or auto-detected. */
   mode: ContentMode;
+  /** Per-second motion curve (v7 arc engine) — absent when the LLM/arc layer is off. */
+  motion?: { time: number; v: number }[];
 }
