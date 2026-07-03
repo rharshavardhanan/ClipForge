@@ -20,6 +20,8 @@ export interface ClipInfo {
   duration: number;
   /** AVSS-predicted average retention (0-1) of the winning edit variant. */
   predictedRetention?: number;
+  /** v7 arc gate: true = complete 6/6 micro-story, false = exported via --lenient. */
+  arcComplete?: boolean;
   files: { final: string; raw: string; srt: string; json: string };
 }
 
@@ -73,6 +75,7 @@ export async function listExports(): Promise<ExportJob[]> {
           sourceVideo: c.source_video,
           duration: c.duration ?? 0,
           predictedRetention: c.predicted_retention,
+          arcComplete: c.arc_complete,
           files: {
             final: `${c.clip_id}_final.mp4`,
             raw: `${c.clip_id}_raw.mp4`,

@@ -167,3 +167,38 @@ describe('AVSS exports (v7)', () => {
     expect('predicted_retention' in manifest.clips[1]).toBe(false);
   });
 });
+
+// ---- v7 arc engine blocks -----------------------------------------------------------------
+describe('exporter arc blocks', () => {
+  const arc = {
+    complete: true, missing: [] as string[], arcScore: 0.87, synopsis: 'setup to payoff',
+    reactionAfterPeak: true, provider: 'gemini',
+    components: { setup: { start: 10, end: 14 }, trigger: { start: 13, end: 14 }, escalation: { start: 14, end: 18 }, peak: { start: 18, end: 20 }, payoff: { start: 20, end: 23 }, reaction: { start: 23, end: 26 } },
+  };
+
+  it('clip json carries the arc block verbatim when provided', () => {
+    const j: any = buildClipJson(clip, 'H14bBuluwB8', { final: 'f.mp4', raw: 'r.mp4', srt: 's.srt' }, undefined, undefined, undefined, arc);
+    expect(j.arc).toEqual(arc);
+  });
+  it('no arc data → clip json has NO arc key and manifest arc_rejections is []', () => {
+    const j: any = buildClipJson(clip, 'H14bBuluwB8', { final: 'f.mp4', raw: 'r.mp4', srt: 's.srt' });
+    expect('arc' in j).toBe(false);
+    const m: any = buildManifest('job', 'src', meta, [clip]);
+    expect(m.arc_rejections).toEqual([]);
+    expect('arc_complete' in m.clips[0]).toBe(false);
+  });
+  it('manifest marks arc_complete per clip and carries arc_rejections', () => {
+    const rejections = [{ clip_id: 'clip_009', start: 100, end: 120, missing: ['payoff'], reason: 'incomplete-arc' }];
+    const m: any = buildManifest('job', 'src', meta, [clip], undefined, new Map([['clip_001', { ...arc, complete: false }]]), rejections);
+    expect(m.clips[0].arc_complete).toBe(false);
+    expect(m.arc_rejections).toEqual(rejections);
+  });
+  it('writeExports writes the arc block into the clip json on disk', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'arc-exp-'));
+    await writeExports(dir, 'job', 'src', meta, [clip], undefined, undefined, undefined, new Map([['clip_001', arc]]), []);
+    const j: any = JSON.parse(await readFile(join(dir, 'clip_001.json'), 'utf8'));
+    expect(j.arc.synopsis).toBe('setup to payoff');
+    const m: any = JSON.parse(await readFile(join(dir, 'clips_manifest.json'), 'utf8'));
+    expect(m.clips[0].arc_complete).toBe(true);
+  });
+});

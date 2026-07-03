@@ -33,12 +33,13 @@ export function Card({ children, className = '', accent = false }: { children: R
   );
 }
 
-export function Badge({ children, tone = 'zinc' }: { children: React.ReactNode; tone?: 'zinc' | 'gold' | 'green' | 'red' }) {
+export function Badge({ children, tone = 'zinc' }: { children: React.ReactNode; tone?: 'zinc' | 'gold' | 'green' | 'red' | 'amber' }) {
   const tones = {
     zinc: 'bg-ink-600 text-zinc-300 border border-line',
     gold: 'bg-gold-soft text-gold border border-gold/25',
     green: 'bg-green-400/12 text-green-300 border border-green-400/25',
     red: 'bg-red-400/12 text-red-300 border border-red-400/25',
+    amber: 'bg-amber-400/12 text-amber-300 border border-amber-400/25',
   };
   return <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${tones[tone]}`}>{children}</span>;
 }
