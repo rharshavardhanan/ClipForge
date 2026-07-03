@@ -16,13 +16,13 @@ describe('buildZoomSfxTimes (mirrors remotion punchZoom)', () => {
 
 describe('planSfx', () => {
   const lib = { whoosh: ['/s/w.mp3'], impact: ['/s/i.mp3'] };
-  it('impact at hook + whoosh per zoom event', () => {
-    const events = planSfx([w(2, true), w(6, true)], lib, { hasHook: true, zooms: true, seed: 'a' });
+  it('impact at hook + whoosh per given zoom time', () => {
+    const events = planSfx([2, 6], lib, { hasHook: true, seed: 'a' });
     expect(events[0]).toEqual({ time: 0.05, path: '/s/i.mp3' });
     expect(events.filter((e) => e.path === '/s/w.mp3').map((e) => e.time)).toEqual([2, 6]);
   });
-  it('no zooms flag → no whooshes; empty lib → no events', () => {
-    expect(planSfx([w(2, true)], lib, { hasHook: false, zooms: false, seed: 'a' })).toEqual([]);
-    expect(planSfx([w(2, true)], {}, { hasHook: true, zooms: true, seed: 'a' })).toEqual([]);
+  it('empty zoom times → no whooshes; empty lib → no events', () => {
+    expect(planSfx([], lib, { hasHook: false, seed: 'a' })).toEqual([]);
+    expect(planSfx([2], {}, { hasHook: true, seed: 'a' })).toEqual([]);
   });
 });

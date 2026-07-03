@@ -35,6 +35,9 @@ export interface RenderOpts {
   zooms?: boolean;
   /** Punch-zoom amplitude multiplier (v6 modes: clippies 1, mindcuts ~0.55). */
   zoomIntensity?: number;
+  /** Zoom event times computed in node (AVSS winner plan) — the composition and the SFX
+   *  whooshes then share one array; absent falls back to Remotion's internal computation. */
+  zoomTimes?: number[];
   framing?: 'blur' | 'crop';
   /** Arrow callouts pointing at the speaker's face on peak moments (output px). */
   callouts?: { time: number; x: number; y: number }[];
@@ -76,6 +79,7 @@ export function buildProps(
       ? { broll: buildBrollWindows(opts.broll, opts.fps, brollRelPaths) } : {}),
     zooms: opts.zooms ?? true,
     ...(opts.zoomIntensity !== undefined ? { zoomIntensity: opts.zoomIntensity } : {}),
+    ...(opts.zoomTimes !== undefined ? { zoomTimes: opts.zoomTimes } : {}),
   };
 }
 

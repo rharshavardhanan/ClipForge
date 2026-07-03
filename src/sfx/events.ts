@@ -1,7 +1,9 @@
 /**
- * SFX timing plan. buildZoomSfxTimes MUST mirror remotion/src/punchZoom.ts buildZoomEvents
- * (min gap 2.5s, max 4 events, nothing in the first second) so sounds land exactly on the
- * visual punch-zooms.
+ * SFX timing plan. Since AVSS, zoom times are computed ONCE in node (this builder) and
+ * passed to Remotion as the `zoomTimes` prop, so sounds and visual punches share the
+ * same array by construction. buildZoomSfxTimes still mirrors remotion/src/punchZoom.ts
+ * buildZoomEvents (min gap 2.5s, max 4 events, nothing in the first second) — that
+ * mirror is only the fallback for renders without the prop.
  */
 import type { CaptionWord } from '../types/index.js';
 import { pickSfx, type SfxKind } from './library.js';
@@ -24,22 +26,21 @@ export function buildZoomSfxTimes(
 
 export interface SfxEvent { time: number; path: string; }
 
-/** PURE: impact one-shot under the hook card + a whoosh on each punch-zoom event. */
+/** PURE: impact one-shot under the hook card + a whoosh on each punch-zoom time.
+ *  Callers pass the plan's zoom times (empty array = no zoom whooshes). */
 export function planSfx(
-  words: CaptionWord[],
+  zoomTimes: number[],
   lib: Partial<Record<SfxKind, string[]>>,
-  opts: { hasHook: boolean; zooms: boolean; seed: string },
+  opts: { hasHook: boolean; seed: string },
 ): SfxEvent[] {
   const events: SfxEvent[] = [];
   if (opts.hasHook) {
     const impact = pickSfx(lib, 'impact', `${opts.seed}_hook`);
     if (impact) events.push({ time: 0.05, path: impact });
   }
-  if (opts.zooms) {
-    for (const [i, t] of buildZoomSfxTimes(words).entries()) {
-      const whoosh = pickSfx(lib, 'whoosh', `${opts.seed}_zoom_${i}`);
-      if (whoosh) events.push({ time: t, path: whoosh });
-    }
+  for (const [i, t] of zoomTimes.entries()) {
+    const whoosh = pickSfx(lib, 'whoosh', `${opts.seed}_zoom_${i}`);
+    if (whoosh) events.push({ time: t, path: whoosh });
   }
   return events;
 }

@@ -333,8 +333,8 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
         : `[${clip.clip_id}] blur-background framing`);
 
       // sound design: impact under the hook card + whooshes on the punch-zoom moments
-      const sfxEvents = planSfx(captionWords, sfxLib, {
-        hasHook: Boolean(hookText), zooms: opts.zooms !== false, seed: `${source.jobId}_${clip.clip_id}`,
+      const sfxEvents = planSfx(opts.zooms === false ? [] : buildZoomSfxTimes(captionWords), sfxLib, {
+        hasHook: Boolean(hookText), seed: `${source.jobId}_${clip.clip_id}`,
       });
       if (sfxEvents.length) {
         const tmpSfx = finalPath.replace(/\.mp4$/, '.sfx.mp4');
