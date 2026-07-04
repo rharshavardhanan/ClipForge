@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildMontagePlan, remapCycleEvents } from '../../src/montage/planner.js';
+import { buildMontagePlan, cutTimes, mulberry32, remapCycleEvents } from '../../src/montage/planner.js';
 import type { MusicMap, MontageMoment } from '../../src/montage/types.js';
 
 const BPM = 120; // beat = 0.5s
@@ -54,12 +54,29 @@ describe('buildMontagePlan', () => {
     expect(freeze.freeze).toBe(true);
   });
   it('strongest moment is reserved for the drop hit', () => {
+    // NOTE: this fixture's drop (t=20) happens to sit exactly on the 0.5s beat grid, so it
+    // passes even under the old float `Math.abs(cut.time - dropRel) < 1e-3` compare — see the
+    // "non-beat-aligned drop" test below (BUG I-2) for the case that actually exercises real
+    // (non-grid-aligned) drop timestamps from musicMap.detectDrops.
     let t = 0;
     for (const s of plan.segments) {
       const st = t; t += s.freeze ? s.srcDur : s.srcDur / s.playbackRate;
       const dropRelStart = 20 - plan.musicOffset;
       if (Math.abs(st - dropRelStart) < 0.05) expect(s.src).toBe('m0.mp4');
     }
+  });
+  it('strongest moment lands ON a non-beat-aligned drop, not only in the payoff (BUG I-2)', () => {
+    // Real drops from musicMap.detectDrops are NOT snapped to the beat grid. Move the drop
+    // off-grid (20.3s, vs. a 0.5s beat grid) — the reserved moment (m0.mp4, highest
+    // motion+audio score) must still land on a cut inside the main drop section, not only in
+    // the trailing payoff (which always carries the reserved src unconditionally, so its mere
+    // presence there proves nothing). `pool` explicitly excludes byScore[0] (m0.mp4) from
+    // ordinary rotation, so ANY m0.mp4 segment outside the last two payoff segments can only
+    // exist because a cut was flagged as the drop hit.
+    const offGridMap: MusicMap = { ...map, drops: [{ time: 20.3, strength: 4 }] };
+    const offGridPlan = buildMontagePlan(offGridMap, moments, { targetSec: 25, seed: 'test' });
+    const mainCutSegments = offGridPlan.segments.slice(0, -2); // exclude slowmo + freeze payoff
+    expect(mainCutSegments.some((s) => s.src === 'm0.mp4')).toBe(true);
   });
   it('flashes only at cut boundaries, 1-4 frames', () => {
     for (const f of plan.flashes) {
@@ -79,5 +96,23 @@ describe('remapCycleEvents', () => {
     const times = events.map((e) => e.time);
     expect([...times].sort((a, b) => a - b)).toEqual(times);
     for (const e of events) { expect(e.time).toBeGreaterThanOrEqual(0); expect(e.time).toBeLessThan(plan.totalDur); }
+  });
+});
+
+describe('cutTimes — drop-hit marking (BUG I-2)', () => {
+  it('flags exactly one cut — the first drop-kind cut — even when the drop is off the beat grid', () => {
+    const offGridMap: MusicMap = { ...map, drops: [{ time: 20.3, strength: 4 }] };
+    const rng = mulberry32('test');
+    const cuts = cutTimes(offGridMap, 0, 25, rng);
+
+    const dropHitCuts = cuts.filter((c) => c.dropHit);
+    expect(dropHitCuts.length).toBe(1);
+
+    const firstDropKindCut = cuts.find((c) => c.kind === 'drop');
+    expect(dropHitCuts[0]).toBe(firstDropKindCut);
+
+    // First beat at/after the off-grid drop (20.3) on the 0.5s grid — NOT 20.3 itself, and
+    // structurally marked regardless of the (non-zero) distance from the raw drop timestamp.
+    expect(dropHitCuts[0]!.time).toBeCloseTo(20.5, 10);
   });
 });
