@@ -21,13 +21,24 @@ export function slugTag(s: string): string | null {
   return slug ? `#${slug}` : null;
 }
 
-const VIRAL_TAGS = ['#shorts', '#viral', '#fyp', '#trending', '#clips'];
+// YouTube truncates video titles past 100 chars (also enforced again at upload time in
+// youtubeUpload.ts) — capped here too so title.txt already shows what will actually upload.
+const TITLE_MAX_CHARS = 100;
+// Generous reach pool for the DESCRIPTION (not the tags field) — YouTube has no practical
+// limit on description hashtags and search benefits from a wide net; hashtags.txt / the
+// upload `tags` field reuse the same deduped set (youtubeUpload.ts budget-caps that field
+// separately, so a bigger pool here is safe).
+const VIRAL_TAGS = [
+  '#shorts', '#viral', '#fyp', '#trending', '#clips',
+  '#foryou', '#foryoupage', '#explore', '#viralvideo', '#shortsvideo',
+  '#reels', '#youtubeshorts', '#fy', '#shortsfeed', '#viralshorts',
+];
 
 function sentimentTags(sentiment?: string): string[] {
   switch (sentiment) {
-    case 'funny': return ['#funny', '#comedy', '#lol'];
-    case 'intense': return ['#insane', '#crazy', '#epic'];
-    case 'serious': return ['#motivation', '#mindset'];
+    case 'funny': return ['#funny', '#comedy', '#lol', '#hilarious', '#memes'];
+    case 'intense': return ['#insane', '#crazy', '#epic', '#wild', '#unbelievable'];
+    case 'serious': return ['#motivation', '#mindset', '#inspiration', '#discipline'];
     default: return [];
   }
 }
@@ -44,16 +55,19 @@ function baseTitle(clip: RankedClip): string {
 
 export function buildSeoPack(clip: RankedClip, meta: VideoMetadata): SeoPack {
   const creatorTag = meta.channelName ? slugTag(meta.channelName) : null;
-  const nicheTags = (meta.tags ?? []).map(slugTag).filter((t): t is string => t !== null).slice(0, 5);
+  const nicheTags = (meta.tags ?? []).map(slugTag).filter((t): t is string => t !== null).slice(0, 10);
 
   const hashtags = [...new Set([
     ...(creatorTag ? [creatorTag] : []),
     ...VIRAL_TAGS,
     ...sentimentTags(clip.sentiment),
     ...nicheTags,
-  ])].slice(0, 15);
+  ])].slice(0, 30);
 
-  const title = [baseTitle(clip), creatorTag, '#shorts'].filter(Boolean).join(' ');
+  const titleRaw = [baseTitle(clip), creatorTag, '#shorts'].filter(Boolean).join(' ');
+  const title = titleRaw.length <= TITLE_MAX_CHARS
+    ? titleRaw
+    : titleRaw.slice(0, TITLE_MAX_CHARS - 1).trimEnd() + '…';
 
   const hookSrc = clip.hook_moment || clip.transcript_excerpt || 'wait for it';
   const hookWords = hookSrc.trim().split(/\s+/).filter(Boolean);

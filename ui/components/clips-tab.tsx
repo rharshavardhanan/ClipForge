@@ -99,6 +99,9 @@ export function ClipsTab({ jobs, onRefresh }: { jobs: ExportJob[]; onRefresh: ()
               <Icon name="clips" className="h-5 w-5 shrink-0 text-zinc-500" />
               <span className="truncate font-display text-base font-semibold text-zinc-100">{job.title}</span>
               <Badge>{job.clipCount} clips</Badge>
+              {job.belowRetentionCount > 0 && (
+                <Badge tone="red">+{job.belowRetentionCount} below retention floor</Badge>
+              )}
               {job.hasRanking && <Badge tone="gold">ranking</Badge>}
               <span className="ml-auto font-mono text-xs text-zinc-600">{job.id}</span>
               <Icon name="import" className={`h-4 w-4 shrink-0 text-zinc-500 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
@@ -120,7 +123,10 @@ export function ClipsTab({ jobs, onRefresh }: { jobs: ExportJob[]; onRefresh: ()
                       <Badge>{c.score.toFixed(1)}</Badge>
                       <Badge>{Math.round(c.duration)}s</Badge>
                       {c.sentiment && <Badge tone={sentimentTone(c.sentiment)}>{c.sentiment}</Badge>}
-                      {c.predictedRetention !== undefined && <Badge>~{Math.round(c.predictedRetention * 100)}% ret</Badge>}
+                      {c.predictedRetention !== undefined && (
+                        <Badge tone={c.belowRetentionFloor ? 'red' : 'zinc'}>~{Math.round(c.predictedRetention * 100)}% ret</Badge>
+                      )}
+                      {c.belowRetentionFloor && <Badge tone="red">below floor</Badge>}
                       {c.arcComplete !== undefined && <Badge tone={c.arcComplete ? 'green' : 'amber'}>{c.arcComplete ? 'story ✓' : 'partial'}</Badge>}
                     </div>
                     {c.title && <p className="text-sm font-semibold leading-snug text-zinc-100">{c.title}</p>}
@@ -129,7 +135,11 @@ export function ClipsTab({ jobs, onRefresh }: { jobs: ExportJob[]; onRefresh: ()
                       <a className="font-medium text-zinc-400 hover:text-gold" href={`/api/video?job=${job.id}&file=${c.files.srt}`} download>.srt</a>
                       <a className="font-medium text-zinc-400 hover:text-gold" href={`/api/video?job=${job.id}&file=${c.files.json}`} target="_blank">.json</a>
                       <a className="font-medium text-zinc-400 hover:text-gold" href={`/api/video?job=${job.id}&file=${c.files.raw}`} download>raw</a>
-                      <button className="font-semibold text-zinc-300 hover:text-gold" onClick={() => openPublish(job.id, c)}>▶ YouTube</button>
+                      {c.belowRetentionFloor ? (
+                        <span className="text-zinc-600" title="Below the retention floor — the CLI upload command only reads the top exports tier. Re-run with a lower --min-retention to promote it, or upload manually.">▶ YouTube (n/a)</span>
+                      ) : (
+                        <button className="font-semibold text-zinc-300 hover:text-gold" onClick={() => openPublish(job.id, c)}>▶ YouTube</button>
+                      )}
                       <button className="font-medium text-zinc-400 hover:text-gold" onClick={() => copyCaption(job.id, c.clipId)}>
                         {copied === `${job.id}/${c.clipId}` ? '✓ copied' : 'IG caption'}
                       </button>

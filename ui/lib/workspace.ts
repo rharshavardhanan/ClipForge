@@ -22,6 +22,9 @@ export interface ClipInfo {
   predictedRetention?: number;
   /** v7 arc gate: true = complete 6/6 micro-story, false = exported via --lenient. */
   arcComplete?: boolean;
+  /** True when this clip fell below --min-retention and was segregated into
+   *  exports/<job>/below_retention/ instead of the top-level tier. */
+  belowRetentionFloor?: boolean;
   files: { final: string; raw: string; srt: string; json: string };
 }
 
@@ -31,9 +34,34 @@ export interface ExportJob {
   source: string;
   processedAt: string;
   clipCount: number;
+  belowRetentionCount: number;
   hasRanking: boolean;
   sizeBytes: number;
   clips: ClipInfo[];
+}
+
+function mapManifestClips(manifest: any, belowRetentionFloor: boolean): ClipInfo[] {
+  const prefix = belowRetentionFloor ? 'below_retention/' : '';
+  return (manifest.clips ?? []).map((c: any) => ({
+    clipId: c.clip_id,
+    rank: c.rank,
+    score: c.composite_score,
+    title: c.clip_titles?.[0] ?? '',
+    hook: c.hook_moment ?? '',
+    excerpt: c.transcript_excerpt ?? '',
+    sentiment: c.sentiment,
+    sourceVideo: c.source_video,
+    duration: c.duration ?? 0,
+    predictedRetention: c.predicted_retention,
+    arcComplete: c.arc_complete,
+    belowRetentionFloor,
+    files: {
+      final: `${prefix}${c.clip_id}_final.mp4`,
+      raw: `${prefix}${c.clip_id}_raw.mp4`,
+      srt: `${prefix}${c.clip_id}.srt`,
+      json: `${prefix}${c.clip_id}.json`,
+    },
+  }));
 }
 
 export async function listExports(): Promise<ExportJob[]> {
@@ -56,33 +84,33 @@ export async function listExports(): Promise<ExportJob[]> {
       for (const f of await readdir(dir)) {
         sizeBytes += await stat(join(dir, f)).then((s) => (s.isFile() ? s.size : 0)).catch(() => 0);
       }
+
+      const clips = mapManifestClips(manifest, false);
+
+      // AVSS --min-retention segregates sub-floor clips into below_retention/ instead of
+      // dropping them — surface them here too (tagged) so a run isn't invisible when EVERY
+      // clip lands under the floor (top-level clips_manifest.json would otherwise show 0).
+      let belowClips: ClipInfo[] = [];
+      try {
+        const belowManifest = JSON.parse(await readFile(join(dir, 'below_retention', 'clips_manifest.json'), 'utf8'));
+        belowClips = mapManifestClips(belowManifest, true);
+        for (const f of await readdir(join(dir, 'below_retention')).catch(() => [] as string[])) {
+          sizeBytes += await stat(join(dir, 'below_retention', f)).then((s) => (s.isFile() ? s.size : 0)).catch(() => 0);
+        }
+      } catch {
+        // no sub-floor tier for this job — normal case
+      }
+
       jobs.push({
         id,
         title: manifest.title ?? id,
         source: manifest.source ?? '',
         processedAt: manifest.processed_at ?? '',
-        clipCount: manifest.clips_generated ?? manifest.clips?.length ?? 0,
+        clipCount: clips.length,
+        belowRetentionCount: belowClips.length,
         hasRanking,
         sizeBytes,
-        clips: (manifest.clips ?? []).map((c: any) => ({
-          clipId: c.clip_id,
-          rank: c.rank,
-          score: c.composite_score,
-          title: c.clip_titles?.[0] ?? '',
-          hook: c.hook_moment ?? '',
-          excerpt: c.transcript_excerpt ?? '',
-          sentiment: c.sentiment,
-          sourceVideo: c.source_video,
-          duration: c.duration ?? 0,
-          predictedRetention: c.predicted_retention,
-          arcComplete: c.arc_complete,
-          files: {
-            final: `${c.clip_id}_final.mp4`,
-            raw: `${c.clip_id}_raw.mp4`,
-            srt: `${c.clip_id}.srt`,
-            json: `${c.clip_id}.json`,
-          },
-        })),
+        clips: [...clips, ...belowClips],
       });
     } catch {
       // dir without a complete manifest (interrupted job) — skip
@@ -93,8 +121,13 @@ export async function listExports(): Promise<ExportJob[]> {
 }
 
 export function exportFilePath(jobId: string, file: string): string {
-  // basename-only guard against path traversal
+  // basename-only guard against path traversal, with one carve-out: the literal
+  // "below_retention/" prefix the AVSS retention floor writes clips under.
   const safeJob = jobId.replace(/[^A-Za-z0-9_-]/g, '');
-  const safeFile = file.replace(/[^A-Za-z0-9._-]/g, '');
-  return join(WORKSPACE_DIR, 'exports', safeJob, safeFile);
+  const belowRetention = file.startsWith('below_retention/');
+  const rest = belowRetention ? file.slice('below_retention/'.length) : file;
+  const safeFile = rest.replace(/[^A-Za-z0-9._-]/g, '');
+  return belowRetention
+    ? join(WORKSPACE_DIR, 'exports', safeJob, 'below_retention', safeFile)
+    : join(WORKSPACE_DIR, 'exports', safeJob, safeFile);
 }

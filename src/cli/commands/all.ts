@@ -113,6 +113,10 @@ export interface AllOpts {
   arcTopk?: number;
   /** Export clips that fail the 6/6 story gate, labeled arc.complete=false. Default false. */
   lenient?: boolean;
+  /** AVSS predicted-retention floor (0-1). A selected clip whose winning variant simulates
+   *  below this is hard-dropped before render. Default 0.75. Clips whose simulation failed
+   *  (no prediction) are kept. */
+  minRetention?: number;
 }
 
 /** PURE: files/dirs to remove when --delete-source is set — the big source download and the
@@ -455,9 +459,15 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
   const packs = new Map<string, SeoPack>();
   const brollByClip = new Map<string, BrollSegment[]>();
   const avssByClip = new Map<string, AvssExport>();
+  // AVSS retention floor. Clips are NOT dropped: those whose winning variant simulates below
+  // the floor still render, but into the exports/<job>/below_retention/ subfolder instead of the
+  // top-level dir. Set --min-retention 0 to send everything to the top level.
+  const retentionFloor = opts.minRetention ?? 0.70;
+  const belowFloor: { clip_id: string; start: number; end: number; retention: number }[] = [];
+  const belowFloorIds = new Set<string>();
+  const belowDir = join(exportsDir, 'below_retention');
   for (const { clip, source } of selected) {
     const sp2 = ora(`[${clip.clip_id}] (${source.jobId}) extract + caption…`).start();
-    const finalPath = join(exportsDir, `${clip.clip_id}_final.mp4`);
     const clipsDir = join(WS, 'clips', source.jobId);
     const profile = MODE_PROFILES[source.mode];
     const dims = aspectDims(opts.aspect ?? '9:16');
@@ -469,7 +479,7 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
 
       const clipWords = source.segments.flatMap((s) => s.words).filter((w) => w.end > clip.start && w.start < clip.end);
       const captionWords = buildCaptionWords(clipWords, clip.start, source.triggers.map((t) => t.phrase));
-      await writeSrt(captionWords, join(exportsDir, `${clip.clip_id}.srt`));
+      // SRT is written per-tier once the retention tier (top vs. below_retention/) is known below.
 
       // Both modes render from the full 16:9 extract: 'crop' pans/zooms a face track over it,
       // 'blur' centers it over a blurred backdrop. Blur is the default (natural, no face cutting).
@@ -505,6 +515,7 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
       });
       const signals = buildSourceSignals(clip, captionWords, source.audio, source.semantic);
       let plan = regulate(basePlan, clip.duration).plan;
+      let winnerRetention: number | undefined;   // undefined ⇒ simulation failed ⇒ can't gate ⇒ keep
       try {
         const variants = generateVariants(basePlan, {
           mode: source.mode, policy, templates,
@@ -515,6 +526,7 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
         const scored = scoreVariants(variants, signals);
         const winner = pickWinner(scored);
         plan = winner.variant.plan;
+        winnerRetention = winner.sim.avgRetention;
         avssByClip.set(clip.clip_id, {
           winner, all: scored, dna: extractDna(plan, signals, source.mode), policyVersion: policy.version,
         });
@@ -522,6 +534,19 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
       } catch (e) {
         logger.warn(`[${clip.clip_id}] avss simulation failed — using base plan: ${e instanceof Error ? e.message : String(e)}`);
       }
+
+      // Retention tier: a complete-story clip can still simulate below the watchable bar. It's
+      // NOT dropped — it renders into the below_retention/ subfolder so it's segregated but kept.
+      // A failed simulation (no prediction) can't be judged, so it stays in the top tier.
+      const isBelow = winnerRetention !== undefined && winnerRetention < retentionFloor;
+      if (isBelow) {
+        belowFloorIds.add(clip.clip_id);
+        belowFloor.push({ clip_id: clip.clip_id, start: clip.start, end: clip.end, retention: winnerRetention! });
+      }
+      const outDir = isBelow ? belowDir : exportsDir;
+      await mkdir(outDir, { recursive: true });
+      const finalPath = join(outDir, `${clip.clip_id}_final.mp4`);
+      await writeSrt(captionWords, join(outDir, `${clip.clip_id}.srt`));
 
       // Arrow callouts at the speaker's face on the same peak moments the zooms hit —
       // suppressed while B-roll covers the face. Rides the WINNER's zoom times.
@@ -578,7 +603,7 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
         const thumbRel = Math.max(0, pickThumbnailTime(clip, source.audio.rms_curve) - clip.start);
         // Zoom the thumbnail toward the face nearest the chosen moment (looser 2s tolerance).
         const thumbFace = faceAt(faces, thumbRel, 2);
-        await generateThumbnail(fullPath, thumbRel, pack.thumbnailText, join(exportsDir, `${clip.clip_id}_thumbnail.png`), {
+        await generateThumbnail(fullPath, thumbRel, pack.thumbnailText, join(outDir, `${clip.clip_id}_thumbnail.png`), {
           accent: accentColor,
           ...(thumbFace?.box ? {
             face: {
@@ -591,14 +616,21 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
         logger.warn(`[${clip.clip_id}] thumbnail failed (clip export continues): ${e instanceof Error ? e.message : String(e)}`);
       }
 
-      // copy raw into exports for completeness
-      await mkdir(exportsDir, { recursive: true });
-      await copyFile(fullPath, join(exportsDir, `${clip.clip_id}_raw.mp4`));
+      // copy raw into the clip's tier folder for completeness
+      await copyFile(fullPath, join(outDir, `${clip.clip_id}_raw.mp4`));
       succeeded.push({ clip, source });
       sp2.succeed(`[${clip.clip_id}] done`);
     } catch (e) {
       sp2.fail(`[${clip.clip_id}] skipped: ${e instanceof Error ? e.message : String(e)}`);
     }
+  }
+
+  if (belowFloor.length > 0) {
+    const t = new Table({ head: ['Clip', 'Span', 'Predicted retention', 'Floor'] });
+    belowFloor.forEach((r) => t.push([
+      r.clip_id, `${r.start.toFixed(1)}-${r.end.toFixed(1)}s`, `${(r.retention * 100).toFixed(0)}%`, `${(retentionFloor * 100).toFixed(0)}%`,
+    ]));
+    logger.info(`\n${belowFloor.length} clip(s) below the ${(retentionFloor * 100).toFixed(0)}% retention floor → segregated into below_retention/:\n` + t.toString());
   }
 
   // Record exported ranges per source so future runs avoid reusing this material.
@@ -614,8 +646,9 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
 
   const ranked = succeeded.map((s) => s.clip);
   const primary = analyses[0];
-  if (ranked.length < selected.length) {
-    logger.warn(`${selected.length - ranked.length}/${selected.length} clip(s) failed/skipped; manifest has the ${ranked.length} that exported.`);
+  const failedOrSkipped = selected.length - ranked.length;
+  if (failedOrSkipped > 0) {
+    logger.warn(`${failedOrSkipped}/${selected.length} clip(s) failed/skipped; manifest has the ${ranked.length} that exported.`);
   }
   // v7: per-clip arc block (gate status + refined label) for clip.json + the manifest.
   const arcByClip = new Map<string, ArcExport>();
@@ -631,14 +664,23 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
       provider,
     });
   }
-  await writeExports(exportsDir, id, primary.url, primary.meta, ranked, packs, brollByClip, avssByClip, arcByClip, arcRejections);
+  // Two self-contained folders: top-level exports/<job>/ keeps today's layout (GUI + upload read
+  // it unchanged), while sub-floor clips get their own manifest under below_retention/.
+  const aboveClips = ranked.filter((c) => !belowFloorIds.has(c.clip_id));
+  const belowClips = ranked.filter((c) => belowFloorIds.has(c.clip_id));
+  await writeExports(exportsDir, id, primary.url, primary.meta, aboveClips, packs, brollByClip, avssByClip, arcByClip, arcRejections);
+  if (belowClips.length > 0) {
+    await writeExports(belowDir, id, primary.url, primary.meta, belowClips, packs, brollByClip, avssByClip, arcByClip, []);
+  }
 
-  const head = analyses.length === 1 ? ['Rank', 'Score', 'Dur', 'Excerpt'] : ['Rank', 'Score', 'Dur', 'Source', 'Excerpt'];
+  const baseHead = analyses.length === 1 ? ['Rank', 'Score', 'Dur', 'Excerpt'] : ['Rank', 'Score', 'Dur', 'Source', 'Excerpt'];
+  const head = belowFloor.length > 0 ? [...baseHead, 'Tier'] : baseHead;
   const table = new Table({ head });
   ranked.forEach((c) => {
-    const row = [c.rank, c.composite_score, `${Math.round(c.duration)}s`];
+    const row: (string | number)[] = [c.rank, c.composite_score, `${Math.round(c.duration)}s`];
     if (analyses.length > 1) row.push(c.source_video ?? '');
     row.push(c.transcript_excerpt.slice(0, 40));
+    if (belowFloor.length > 0) row.push(belowFloorIds.has(c.clip_id) ? 'below_retention' : 'top');
     table.push(row);
   });
   logger.info('\n' + table.toString());

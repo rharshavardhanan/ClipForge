@@ -45,6 +45,7 @@ function addRenderOptions(cmd: Command): Command {
     .option('--delete-source', 'delete the downloaded source video + intermediates after export (frees disk)')
     .option('--allow-repeats', 'allow re-exporting moments already used by previous runs of the same video')
     .option('--arc-topk <n>', 'candidates given the arc completion + 6/6 story gate (min = --top)', (v) => parseInt(v, 10), 8)
+    .option('--min-retention <pct>', 'clips below this AVSS-predicted retention % render into a below_retention/ subfolder instead of the top level (0 = all top level)', (v) => parseFloat(v), 70)
     .option('--lenient', 'export clips that fail the 6/6 story gate (labeled arc.complete=false)');
 }
 
@@ -72,6 +73,8 @@ function renderOpts(o: any) {
     sfx: o.sfx, sfxVolume: o.sfxVolume, sfxDir: o.sfxDir,
     deleteSource: o.deleteSource, allowRepeats: o.allowRepeats,
     arcTopk: o.arcTopk, lenient: o.lenient,
+    // CLI takes a percentage (75); the pipeline gates on a 0-1 fraction.
+    minRetention: o.minRetention != null ? o.minRetention / 100 : undefined,
   };
 }
 

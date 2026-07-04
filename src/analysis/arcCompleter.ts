@@ -25,6 +25,7 @@ const SPAN_SCHEMA = {
   type: 'object',
   properties: { start: { type: 'number' }, end: { type: 'number' } },
   required: ['start', 'end'],
+  additionalProperties: false,
 } as const;
 
 export const ARC_COMPLETE_SCHEMA = {
@@ -37,10 +38,12 @@ export const ARC_COMPLETE_SCHEMA = {
       type: 'object',
       properties: Object.fromEntries(ARC_COMPONENT_NAMES.map((k) => [k, SPAN_SCHEMA])),
       required: [...ARC_COMPONENT_NAMES],
+      additionalProperties: false,
     },
     bounds: SPAN_SCHEMA,
   },
   required: ['synopsis', 'confidence', 'components', 'bounds'],
+  additionalProperties: false,
 };
 
 /** PURE: the completion prompt for one candidate window. */
