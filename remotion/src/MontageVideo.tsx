@@ -36,22 +36,22 @@ const SegmentLayer: React.FC<{ segment: MontageSegmentProp }> = ({ segment }) =>
 };
 
 /** Full-frame flash/glitch overlay — one cut's worth of subliminal hit. */
-const FlashLayer: React.FC<{ kind: MontageFlashProp['kind'] }> = ({ kind }) => {
+const FlashLayer: React.FC<{ kind: MontageFlashProp['kind']; zIndex?: number }> = ({ kind, zIndex }) => {
   const frame = useCurrentFrame();
   if (kind === 'blur') {
-    return <AbsoluteFill style={{ backdropFilter: 'blur(14px)' }} />;
+    return <AbsoluteFill style={{ backdropFilter: 'blur(14px)', zIndex }} />;
   }
   if (kind === 'glitch') {
     const jitter = Math.sin(frame * 12.9898) * 2;
     return (
-      <AbsoluteFill style={{ transform: `translateX(${jitter}px)` }}>
+      <AbsoluteFill style={{ transform: `translateX(${jitter}px)`, zIndex }}>
         <AbsoluteFill style={{ backgroundColor: '#FF1E56', opacity: 0.55, mixBlendMode: 'screen', transform: 'translateX(-6px)' }} />
         <AbsoluteFill style={{ backgroundColor: '#00E5FF', opacity: 0.55, mixBlendMode: 'screen', transform: 'translateX(6px)' }} />
       </AbsoluteFill>
     );
   }
   const solid = kind === 'white' ? '#FFFFFF' : kind === 'red' ? '#FF0000' : '#000000';
-  return <AbsoluteFill style={{ backgroundColor: solid, opacity: 0.85 }} />;
+  return <AbsoluteFill style={{ backgroundColor: solid, opacity: 0.85, zIndex }} />;
 };
 
 /** PURE: the counter entry active at `frame` — largest `at` that is <= frame (none → null). */
@@ -114,7 +114,7 @@ export const MontageVideo: React.FC<MontageProps> = ({
             <Img src={staticFile(payoffImagePath)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
           </AbsoluteFill>
           <Sequence from={0} durationInFrames={4}>
-            <FlashLayer kind="white" />
+            <FlashLayer kind="white" zIndex={60} />
           </Sequence>
         </Sequence>
       )}
@@ -123,7 +123,7 @@ export const MontageVideo: React.FC<MontageProps> = ({
 
       {flashes.map((flash, i) => (
         <Sequence key={i} from={flash.at} durationInFrames={flash.frames}>
-          <FlashLayer kind={flash.kind} />
+          <FlashLayer kind={flash.kind} zIndex={60} />
         </Sequence>
       ))}
     </AbsoluteFill>
