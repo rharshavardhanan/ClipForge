@@ -1,8 +1,10 @@
 import { Composition, Still } from 'remotion';
 import { CaptionedClip, type ClipProps } from './CaptionedClip';
+import { MontageVideo } from './MontageVideo';
 import { RankingVideo } from './RankingVideo';
 import { RankRotVideo } from './RankRotVideo';
 import { ThumbCard, type ThumbProps } from './ThumbCard';
+import { totalMontageFrames, type MontageProps } from './montageLogic';
 import { totalFrames, type RankingProps } from './rankingLogic';
 import { totalRankRotFrames, type RankRotProps } from './rankrotLogic';
 
@@ -52,6 +54,12 @@ export const RemotionRoot: React.FC = () => (
         durationInFrames: totalRankRotFrames(props.items ?? []),
         fps: props.fps ?? 30,
       })}
+    />
+    <Composition
+      id="MontageVideo" component={MontageVideo} width={1080} height={1920} fps={30}
+      durationInFrames={300}
+      defaultProps={{ segments: [], flashes: [], counter: [], counterLabel: '', musicPath: '', musicVolume: 0.9, musicStartFromFrames: 0, payoffImagePath: '', payoffAtFrame: 0, fps: 30 } as MontageProps}
+      calculateMetadata={({ props }) => ({ durationInFrames: totalMontageFrames(props.segments ?? []), fps: props.fps ?? 30 })}
     />
     <Still
       id="ThumbCard"

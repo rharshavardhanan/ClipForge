@@ -25,7 +25,7 @@ export interface CaptionStyle {
 
 export type PresetName =
   | 'mrbeast' | 'hormozi' | 'gadzhi' | 'gaming' | 'podcast' | 'cinematic'
-  | 'minimal' | 'card' | 'bold';
+  | 'minimal' | 'card' | 'bold' | 'montagem';
 
 const FONTS: CaptionFont[] = ['anton', 'bangers', 'archivo', 'montserrat', 'poppins', 'inter'];
 
@@ -59,6 +59,11 @@ export const CAPTION_PRESETS: Record<PresetName, CaptionStyle> = {
     font: 'montserrat', fontSize: 46, emphasisSize: 52, baseColor: '#EDEDED',
     strokeWidth: 0, strokeColor: '#000000', animation: 'karaoke', position: 'center',
     uppercase: true, wordsPerLine: 5, background: 'none',
+  },
+  montagem: {
+    font: 'anton', fontSize: 82, emphasisSize: 100, baseColor: '#FFFFFF', activeColor: '#FF2E2E',
+    strokeWidth: 6, strokeColor: '#000000', animation: 'glow', position: 'center',
+    uppercase: true, wordsPerLine: 2, background: 'none',
   },
   // Legacy styles — match the pre-preset renderer exactly.
   bold: {
