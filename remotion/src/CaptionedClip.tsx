@@ -37,7 +37,7 @@ export const CaptionedClip: React.FC<ClipProps> = ({
   videoPath, words, accentColor, showHookCard, hookText, cropTrack, srcW, srcH, caption, zooms, zoomIntensity, zoomTimes, framing, callouts, broll,
 }) => {
   const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
+  const { fps, width: frameW, height: frameH } = useVideoConfig();
   const t = frame / fps;
   const punchScale = zooms === false ? 1 : punchScaleAt(zoomTimes ?? buildZoomEvents(words), t, zoomIntensity ?? 1);
   const src = staticFile(videoPath);
@@ -49,7 +49,7 @@ export const CaptionedClip: React.FC<ClipProps> = ({
     <AbsoluteFill style={{ backgroundColor: 'black' }}>
       {mode === 'crop' ? (
         (() => {
-          const layout = reframeStyle(cropTrack ?? [], t, srcW ?? 1080, srcH ?? 1920);
+          const layout = reframeStyle(cropTrack ?? [], t, srcW ?? 1080, srcH ?? 1920, frameW, frameH);
           return (
             <AbsoluteFill style={{ overflow: 'hidden', transform: `scale(${punchScale})`, transformOrigin: '50% 40%' }}>
               <OffthreadVideo src={src} style={{ position: 'absolute', width: layout.width, height: layout.height, left: layout.left, top: layout.top }} />
