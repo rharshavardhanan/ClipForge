@@ -10,7 +10,7 @@ import { createHash } from 'node:crypto';
 export type Mood = 'intense' | 'funny' | 'motivational' | 'suspense' | 'emotional' | 'chill';
 
 const MOODS: Mood[] = ['intense', 'funny', 'motivational', 'suspense', 'emotional', 'chill'];
-const AUDIO_EXTS = new Set(['.mp3', '.m4a', '.wav', '.aac', '.flac', '.ogg']);
+export const AUDIO_EXTS = new Set(['.mp3', '.m4a', '.wav', '.aac', '.flac', '.ogg']);
 
 /** Map a clip's semantic sentiment onto a music mood. */
 export function sentimentToMood(sentiment?: string): Mood {
