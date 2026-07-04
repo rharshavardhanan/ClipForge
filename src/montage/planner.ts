@@ -24,7 +24,15 @@ export function mulberry32(seed: string): () => number {
   };
 }
 
-interface Cut { time: number; kind: 'build' | 'escalation' | 'drop' }
+interface Cut {
+  time: number;
+  kind: 'build' | 'escalation' | 'drop';
+  /** True ONLY on the single cut that is "the drop hit" — the first drop-kind cut emitted
+   *  for this drop. Structural marker, not a float time comparison: drops from
+   *  musicMap.detectDrops are real audio timestamps and are NOT snapped to the beat grid,
+   *  so comparing cut.time against the raw drop time can miss by design (see buildMontagePlan). */
+  dropHit?: boolean;
+}
 
 /** Beat-grid cut times for the montage window. Exported for the test-of-last-resort. */
 export function cutTimes(map: MusicMap, offset: number, targetSec: number, rng: () => number): Cut[] {
@@ -34,12 +42,18 @@ export function cutTimes(map: MusicMap, offset: number, targetSec: number, rng: 
   const halfBeat = 30 / map.bpm;
   const cuts: Cut[] = [];
   let skip = 0;
+  let dropHitAssigned = false;
   for (const [i, b] of beats.entries()) {
     const toDrop = drop ? drop.time - b : Infinity;
     const inEscalation = drop && toDrop > 0 && toDrop <= ESCALATION_BEATS * 2 * halfBeat;
     const inDrop = drop && b >= drop.time && b < drop.time + DROP_HYPER_BEATS * 2 * halfBeat;
     if (inDrop) {
-      cuts.push({ time: b - offset, kind: 'drop' });
+      // The first drop-kind cut is on-beat, at/after the (possibly off-grid) drop time —
+      // that's the structural "drop hit", regardless of how far it lands from the raw
+      // drop timestamp.
+      const dropHit = dropHitAssigned ? undefined : true;
+      dropHitAssigned = true;
+      cuts.push({ time: b - offset, kind: 'drop', dropHit });
       if (i < beats.length - 1) cuts.push({ time: b - offset + halfBeat, kind: 'drop' });
     } else if (inEscalation) {
       cuts.push({ time: b - offset, kind: 'escalation' });
@@ -80,7 +94,7 @@ export function buildMontagePlan(
     const cut = cuts[i];
     const wallDur = (i + 1 < cuts.length ? cuts[i + 1].time : Math.min(target, dropRel + 8)) - cut.time;
     if (wallDur <= 1 / 30) continue;
-    const isDropHit = Math.abs(cut.time - dropRel) < 1e-3;
+    const isDropHit = cut.dropHit === true;
     const m = isDropHit ? reserved : pool[poolIdx++ % pool.length];
     const rate = isDropHit ? 1 : rateFor(cut.kind);
     // Beat-grid safety: wallDur is the source of truth (it's already on-grid, coming
