@@ -10,6 +10,7 @@ import { runRankingRender } from './commands/rank.js';
 import { runAuthYoutube, runUpload } from './commands/publish.js';
 import { runStats } from './commands/stats.js';
 import { runRankRot } from '../rankrot/pipeline.js';
+import { runMontage } from '../montage/pipeline.js';
 import { runUi } from './commands/ui.js';
 import { isLocalInput } from '../ingest/localFile.js';
 import { aspectDims } from '../extraction/aspect.js';
@@ -220,6 +221,26 @@ program.command('rankrot')
         top: Math.max(2, Math.min(10, o.top)), harvest: o.harvest, accent: o.accent,
         sfx: o.sfx, sfxVolume: o.sfxVolume, sfxDir: o.sfxDir,
         cacheDir: o.cacheDir, replays: o.replays,
+      });
+    } catch (e) { logger.error((e as Error).stack ?? String(e)); process.exit(1); }
+  });
+
+program.command('montage')
+  .description('Video(s) + music → beat-synced montagem Short (flashes, ramps, drop payoff, counter, AI payoff frame)')
+  .argument('<inputs...>', 'YouTube URLs and/or local video files')
+  .option('--music <file>', 'music track (else picks from ./music/montagem/)')
+  .option('--music-dir <p>', 'music library root', process.env.MUSIC_DIR ?? './music')
+  .option('--duration <sec>', 'target length 15-45s', (v) => parseFloat(v), 25)
+  .option('--seed <s>', 'plan seed (same seed = same edit)', 'montage')
+  .option('--no-counters', 'disable the rep counter overlay')
+  .option('--no-payoff-image', 'disable the AI-generated payoff frame')
+  .option('--native-audio <v>', 'source audio level under the music 0-1', (v) => parseFloat(v), 0)
+  .action(async (inputs, o) => {
+    await preflightOrExit();
+    try {
+      await runMontage(inputs, {
+        music: o.music, musicDir: o.musicDir, duration: o.duration, seed: o.seed,
+        counters: o.counters, payoffImage: o.payoffImage, nativeAudio: o.nativeAudio,
       });
     } catch (e) { logger.error((e as Error).stack ?? String(e)); process.exit(1); }
   });
