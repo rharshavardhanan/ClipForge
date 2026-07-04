@@ -22,6 +22,7 @@ const SPAN_SCHEMA = {
   type: 'object',
   properties: { start: { type: 'number' }, end: { type: 'number' } },
   required: ['start', 'end'],
+  additionalProperties: false,
 } as const;
 
 export const ARC_MINE_SCHEMA = {
@@ -39,13 +40,16 @@ export const ARC_MINE_SCHEMA = {
             type: 'object',
             properties: Object.fromEntries(ARC_COMPONENT_NAMES.map((k) => [k, SPAN_SCHEMA])),
             required: [...ARC_COMPONENT_NAMES],
+            additionalProperties: false,
           },
         },
         required: ['synopsis', 'confidence', 'components'],
+        additionalProperties: false,
       },
     },
   },
   required: ['arcs'],
+  additionalProperties: false,
 };
 
 /** PURE: the mining prompt for one chunk. */

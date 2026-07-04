@@ -35,9 +35,17 @@ describe('buildSeoPack', () => {
     expect(p.title).toContain('#shorts');
   });
 
-  it('hashtags are lowercase, deduped, #-prefixed, capped at 15', () => {
+  it('title never exceeds YouTube\'s 100-char limit — truncates with ellipsis instead', () => {
+    const longClip = { ...clip, clip_titles: ['A'.repeat(150)] };
+    const p = buildSeoPack(longClip, meta);
+    expect(p.title.length).toBeLessThanOrEqual(100);
+    expect(p.title.endsWith('…')).toBe(true);
+  });
+
+  it('hashtags are lowercase, deduped, #-prefixed, generous pool capped at 30', () => {
     const p = buildSeoPack(clip, meta);
-    expect(p.hashtags.length).toBeLessThanOrEqual(15);
+    expect(p.hashtags.length).toBeGreaterThan(15);
+    expect(p.hashtags.length).toBeLessThanOrEqual(30);
     expect(new Set(p.hashtags).size).toBe(p.hashtags.length);
     for (const h of p.hashtags) expect(h).toMatch(/^#[a-z0-9]+$/);
     expect(p.hashtags).toContain('#ishowspeed');   // creator
@@ -45,10 +53,12 @@ describe('buildSeoPack', () => {
     expect(p.hashtags).toContain('#challenge');    // niche (from meta.tags)
   });
 
-  it('description credits the source video and embeds hashtags', () => {
+  it('description credits the source video and embeds a large hashtag block', () => {
     const p = buildSeoPack(clip, meta);
     expect(p.description).toContain('CRAZY 24 Hour Challenge');
     expect(p.description).toContain('#shorts');
+    const tagsInDescription = p.description.split('\n').at(-1)!.split(' ').filter(Boolean);
+    expect(tagsInDescription.length).toBeGreaterThan(15);
   });
 
   it('description links the source URL when the clip has one', () => {

@@ -73,6 +73,10 @@ export function buildHarvestArgs(url: string, outPath: string, headSec?: number)
     '--max-filesize', '250M',
     '--no-playlist', '--no-warnings',
     '--retries', '5', '--fragment-retries', '5',
+    // YouTube now requires a PO token for the default web client's media (GVS) fetch —
+    // without one the signed URL yt-dlp gets still 403s at the actual download step.
+    // android_vr/web_safari are exempt from that requirement (no token-provider plugin needed).
+    '--extractor-args', 'youtube:player_client=android_vr,web_safari',
     ...(headSec ? ['--download-sections', `*0-${headSec}`, '--force-keyframes-at-cuts'] : []),
     '-o', outPath,
   ];
