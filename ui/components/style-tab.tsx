@@ -44,6 +44,7 @@ const PRESET_STYLES: Record<string, PresetStyle> = {
   gaming: { font: 'bangers', fontSize: 74, emphasisSize: 90, baseColor: '#FFFFFF', activeColor: '#00E5FF', strokeWidth: 8, strokeColor: '#000000', position: 'bottom', uppercase: true, background: 'none' },
   podcast: { font: 'inter', fontSize: 54, emphasisSize: 62, baseColor: '#FFFFFF', strokeWidth: 3, strokeColor: '#000000', position: 'bottom', uppercase: false, background: 'none' },
   cinematic: { font: 'montserrat', fontSize: 46, emphasisSize: 52, baseColor: '#EDEDED', strokeWidth: 0, strokeColor: '#000000', position: 'center', uppercase: true, background: 'none' },
+  montagem: { font: 'anton', fontSize: 82, emphasisSize: 100, baseColor: '#FFFFFF', activeColor: '#FF2E2E', strokeWidth: 6, strokeColor: '#000000', position: 'center', uppercase: true, background: 'none' },
   bold: { font: 'anton', fontSize: 70, emphasisSize: 84, baseColor: '#FFFFFF', strokeWidth: 0, strokeColor: '#000000', position: 'bottom', uppercase: true, background: 'none' },
   minimal: { font: 'inter', fontSize: 56, emphasisSize: 64, baseColor: '#FFFFFF', strokeWidth: 2, strokeColor: '#000000', position: 'bottom', uppercase: false, background: 'none' },
   card: { font: 'anton', fontSize: 70, emphasisSize: 84, baseColor: '#FFFFFF', strokeWidth: 0, strokeColor: '#000000', position: 'bottom', uppercase: true, background: 'card' },
