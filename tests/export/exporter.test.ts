@@ -240,3 +240,23 @@ describe('quality + EDL exports (v4 Slice A)', () => {
     await expect(readFile(join(dir, 'clip_002_edl.json'), 'utf8')).rejects.toThrow();
   });
 });
+
+describe('selection rationale (v4 Slice B)', () => {
+  it('buildSelectionWhy names the top contributors', async () => {
+    const { buildSelectionWhy } = await import('../../src/export/exporter.js');
+    expect(buildSelectionWhy({ visual: 0.9, composite: 8, semantic: 8, fillerPenalty: 0 }, 'dunks', true))
+      .toMatch(/clear on-screen subject/);
+    expect(buildSelectionWhy({ visual: 0.3, composite: 8, semantic: 3, fillerPenalty: 0.3 }, 'x', false))
+      .toMatch(/framing-hostile|filler/);
+    expect(buildSelectionWhy({ visual: 0.6, composite: 5, semantic: 5, fillerPenalty: 0 }, 'newtopic', true))
+      .toMatch(/fresh topic/);
+  });
+
+  it('buildClipJson embeds a selection block only when provided', async () => {
+    const { buildClipJson } = await import('../../src/export/exporter.js');
+    const sel = { features: { composite: 8, visual: 0.8, semantic: 7, filler_penalty: 0, topic: 't' }, why: 'strong composite score' };
+    const withSel = buildClipJson(clip, 'j', { final: 'f', raw: 'r', srt: 's' }, undefined, undefined, undefined, undefined, undefined, sel) as { selection?: unknown };
+    expect(withSel.selection).toEqual(sel);
+    expect('selection' in buildClipJson(clip, 'j', { final: 'f', raw: 'r', srt: 's' })).toBe(false);
+  });
+});

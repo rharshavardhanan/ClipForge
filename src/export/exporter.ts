@@ -8,6 +8,24 @@ import type { EditDna } from '../avss/templates.js';
 import type { ClipQuality } from '../quality/audit.js';
 import type { ClipEdl } from '../report/edl.js';
 
+/** Per-clip selection rationale (v4 Part 2 §4.2 explainability) for clip.json. */
+export interface SelectionExport { features: Record<string, number | string>; why: string; }
+
+/** PURE: a human "why this clip was picked" from its top feature contributions. */
+export function buildSelectionWhy(
+  features: { visual: number; composite: number; semantic: number; fillerPenalty: number },
+  topic: string, topicIsNew: boolean,
+): string {
+  const parts: string[] = [];
+  if (features.composite >= 7) parts.push('strong composite score');
+  if (features.visual >= 0.7) parts.push('clear on-screen subject');
+  else if (features.visual < 0.45) parts.push('weak visual (framing-hostile)');
+  if (features.semantic >= 7) parts.push('high semantic pull');
+  if (features.fillerPenalty >= 0.2) parts.push('filler-heavy delivery');
+  if (topicIsNew && topic) parts.push(`fresh topic "${topic}"`);
+  return parts.length ? parts.join(', ') : 'selected on overall score';
+}
+
 /** PURE: the clip.json `quality` block — flattened gate outcomes + degradation summary. */
 export function buildQualityBlock(q: ClipQuality) {
   return {
@@ -110,6 +128,7 @@ export function buildClipJson(
   avss?: AvssExport,
   arc?: ArcExport,
   quality?: ClipQuality,
+  selection?: SelectionExport,
 ) {
   return {
     clip_id: clip.clip_id, rank: clip.rank, source_video: clip.source_video ?? jobId,
@@ -126,6 +145,7 @@ export function buildClipJson(
     ...(avss ? { avss: buildAvssBlock(avss) } : {}),
     ...(arc ? { arc } : {}),
     ...(quality ? { quality: buildQualityBlock(quality) } : {}),
+    ...(selection ? { selection } : {}),
     files,
   };
 }
@@ -167,6 +187,7 @@ export async function writeExports(
   arcRejections?: ArcRejectionExport[],
   qualityByClip?: Map<string, ClipQuality>,
   edlByClip?: Map<string, ClipEdl>,
+  selectionByClip?: Map<string, SelectionExport>,
 ): Promise<void> {
   await mkdir(dir, { recursive: true });
   for (const clip of clips) {
@@ -187,7 +208,7 @@ export async function writeExports(
     const edl = edlByClip?.get(clip.clip_id);
     if (edl) await writeFile(join(dir, `${clip.clip_id}_edl.json`), JSON.stringify(edl, null, 2));
     await writeFile(join(dir, `${clip.clip_id}.json`),
-      JSON.stringify(buildClipJson(clip, jobId, files, pack, brollByClip?.get(clip.clip_id), avss, arcByClip?.get(clip.clip_id), qualityByClip?.get(clip.clip_id)), null, 2));
+      JSON.stringify(buildClipJson(clip, jobId, files, pack, brollByClip?.get(clip.clip_id), avss, arcByClip?.get(clip.clip_id), qualityByClip?.get(clip.clip_id), selectionByClip?.get(clip.clip_id)), null, 2));
   }
   await writeFile(join(dir, 'broll_manifest.json'), JSON.stringify(buildBrollManifest(clips, brollByClip), null, 2));
   await writeFile(join(dir, 'clips_manifest.json'),
