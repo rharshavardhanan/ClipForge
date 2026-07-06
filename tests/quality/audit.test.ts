@@ -22,6 +22,18 @@ describe('runAudit', () => {
     expect(q.gates).toHaveLength(5);
   });
 
+  it('with keep + preCutWords → runs the cut-integrity gate (6 gates); a mid-word cut fails', () => {
+    const cw = (start: number, end: number) => ({ text: 'w', start, end, emphasized: false });
+    const q = runAudit({
+      ...good,
+      keep: [{ start: 0, end: 5 }, { start: 8, end: 12 }],
+      preCutWords: [cw(4.8, 5.3)],   // straddles the 5s boundary
+    });
+    expect(q.gates).toHaveLength(6);
+    expect(q.passed).toBe(false);
+    expect(q.reasonCodes).toContain(ReasonCode.EDITOR_CUT_ON_NON_BOUNDARY);
+  });
+
   it('caption overflow → not passed, reason surfaced', () => {
     const q = runAudit({ ...good, cues: [{ start: 0, end: 2, lines: ['a', 'b', 'c'] }] });
     expect(q.passed).toBe(false);

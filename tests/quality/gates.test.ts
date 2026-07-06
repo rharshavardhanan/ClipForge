@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  narrativeGate, captionGate, audioGate, durationGate, subjectInFrameGate, SUBJECT_IN_FRAME_FLOOR,
+  narrativeGate, captionGate, audioGate, durationGate, subjectInFrameGate, cutIntegrityGate, SUBJECT_IN_FRAME_FLOOR,
 } from '../../src/quality/gates.js';
 import { DEFAULT_CUE_CONSTRAINTS } from '../../src/captions/captionCues.js';
 import { ReasonCode } from '../../src/report/reasonCodes.js';
@@ -78,5 +78,23 @@ describe('subjectInFrameGate', () => {
   });
   it('no faces at all → pass (nothing to keep in frame)', () => {
     expect(subjectInFrameGate([], [win], SUBJECT_IN_FRAME_FLOOR).outcome.status).toBe('pass');
+  });
+});
+
+describe('cutIntegrityGate (v4 Slice C)', () => {
+  const cw = (start: number, end: number, text = 'w') => ({ text, start, end, emphasized: false });
+  it('identity keep (one span) → pass', () => {
+    expect(cutIntegrityGate([{ start: 0, end: 30 }], [cw(4.8, 5.3)]).outcome.status).toBe('pass');
+  });
+  it('a boundary inside a word → fail EDITOR_CUT_ON_NON_BOUNDARY', () => {
+    // segments [0,5]+[8,12]: boundaries 5 and 8; a word [4.8,5.3] straddles 5
+    const o = cutIntegrityGate([{ start: 0, end: 5 }, { start: 8, end: 12 }], [cw(4.8, 5.3)]).outcome;
+    expect(o.status).toBe('fail');
+    if (o.status === 'fail') expect(o.reason).toBe(ReasonCode.EDITOR_CUT_ON_NON_BOUNDARY);
+  });
+  it('boundaries in inter-word gaps → pass', () => {
+    // word ends at 4.9, next starts at 8.1; boundaries 5 and 8 fall in the gap
+    const words = [cw(4.0, 4.9), cw(8.1, 9.0)];
+    expect(cutIntegrityGate([{ start: 0, end: 5 }, { start: 8, end: 12 }], words).outcome.status).toBe('pass');
   });
 });

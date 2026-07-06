@@ -8,9 +8,10 @@
  */
 import type { CaptionCue, CueConstraints } from '../captions/captionCues.js';
 import { ReasonCode } from '../report/reasonCodes.js';
-import type { CropKeyframe, FaceSample } from '../types/index.js';
+import type { CropKeyframe, FaceSample, CaptionWord } from '../types/index.js';
+import type { KeepSegment } from '../editor/timeMap.js';
 import {
-  narrativeGate, captionGate, audioGate, durationGate, subjectInFrameGate,
+  narrativeGate, captionGate, audioGate, durationGate, subjectInFrameGate, cutIntegrityGate,
   type GateResult,
 } from './gates.js';
 
@@ -44,6 +45,9 @@ export function runAudit(args: {
   cropTrack: CropKeyframe[] | null;
   subjectFloor: number;
   upstreamReasons: ReasonCode[];
+  /** v4 Slice C: kept segments + PRE-cut words for the cut-integrity gate (omit → skipped). */
+  keep?: KeepSegment[];
+  preCutWords?: CaptionWord[];
 }): ClipQuality {
   const gates: GateResult[] = [];
   const reasonCodes: ReasonCode[] = [...args.upstreamReasons];
@@ -67,6 +71,7 @@ export function runAudit(args: {
   runGate(() => audioGate(args.measuredLufs, args.targetLufs));
   runGate(() => durationGate(args.durationSec, args.lenMin, args.lenMax));
   runGate(() => subjectInFrameGate(args.faces, args.cropTrack, args.subjectFloor));
+  if (args.keep && args.preCutWords) runGate(() => cutIntegrityGate(args.keep!, args.preCutWords!));
 
   const passed = gates.every((g) => g.outcome.status !== 'fail');
   const degradations = [...new Set(reasonCodes.filter((c) => DEGRADATION_CODES.has(c)))];
