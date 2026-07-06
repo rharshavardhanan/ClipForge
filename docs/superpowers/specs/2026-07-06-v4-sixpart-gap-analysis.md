@@ -303,9 +303,10 @@ Internal cuts: dead-air + safe-filler removal, segments + src↔out map, caption
 **Slice D — Camera v2** *(the "locked then glides" look)* — ✅ BUILT 2026-07-06 (plan `2026-07-06-v4-slice-d-camera-v2.md`, 4 tasks, commits through f252a2e→smoke).
 Deadband/lock-on + bounded eased glide + anti-overshoot (#24 ✅ — `src/extraction/camera.ts` `lockOnPath` + `smoothCameraAxis` = EMA-denoise → lock-on; replaced the continuous cx/cy EMA in `smoothTrack` + `buildActiveSpeakerTrack`; cropH keeps zoom hysteresis); the deadband comfort box subsumes time-based switch hysteresis (#29 ✅) for micro-jitter, the existing jump-distance switch easing handles real speaker changes. Smoke-verified: continuous single-shot clip holds 92% of samples with max within-shot step ≤ the velocity bound; cut-heavy footage snaps per shot (never pans across a cut). DEFERRED: #26 caption-zone avoidance (needs the safe-area rect wired into the crop solver), #27 look-room from gaze (low value). 739 tests.
 
-**Slice E — Composite candidates** *(Q&A / setup-punchline arcs)*
-Arc-template functions over segments + RESPONDS_TO heuristics (#11); stitcher assembly
-(needs C); minimal SceneLink structure only if required.
+**Slice E — Composite candidates** *(Q&A / setup-punchline arcs)* — ✅ BUILT 2026-07-06 (plan `2026-07-06-v4-slice-e-composite-candidates.md`, 4 tasks, commits through T3).
+Arc-template functions over segments (#11 ✅ — `src/director/arcTemplates.ts`: `isQuestion` + `detectQaCandidates` (question '?'/interrogative opener → answer span), `detectReactionCandidates` (Tier-1 trigger → setup+tail), `spanComposite` (windowScorer-fallback shape + template bonus), `mergeTemplateCandidates` dedup ≥50% vs pool mirroring the arc miner). Wired into `analyzeVideo` after arc mining; flows through the UNCHANGED rank → 6/6 gate → select → tighten → render path. Verified: 8 Q&A candidates generated on H14bBuluwB8 anchored to question boundaries; merge+dedup + pipeline flow tested; exported clip passes all 6 audit gates. **DEFERRED (documented):** the spec's explicit non-contiguous `node_path` + `Stitcher` + `RESPONDS_TO`/`SAME_TOPIC` graph — a composite is a contiguous outer span whose mid-clip aside is excised by Slice C tightening (covers the common Q→A-with-aside case without the contiguous-clip-model rewrite); true speaker-turn Q&A pairing waits on Slice F diarization. 749 tests.
+
+**ALL 5 v4 slices (A–E) COMPLETE.** Remaining v4 work is only Slice F capability decisions (each gated).
 
 **Slice F — Capability decisions** *(each needs its own go/no-go)*
 Diarization + global voice-to-face binding (#4/#16 — pick sherpa-onnx vs tinydiarize, Mac
