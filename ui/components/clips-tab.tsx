@@ -128,6 +128,10 @@ export function ClipsTab({ jobs, onRefresh }: { jobs: ExportJob[]; onRefresh: ()
                       )}
                       {c.belowRetentionFloor && <Badge tone="red">below floor</Badge>}
                       {c.arcComplete !== undefined && <Badge tone={c.arcComplete ? 'green' : 'amber'}>{c.arcComplete ? 'story ✓' : 'partial'}</Badge>}
+                      {c.auditPassed === false && <Badge tone="red">audit ✗</Badge>}
+                      {c.degraded && (
+                        <span title={c.degradations?.join(', ')}><Badge tone="amber">degraded</Badge></span>
+                      )}
                     </div>
                     {c.title && <p className="text-sm font-semibold leading-snug text-zinc-100">{c.title}</p>}
                     {c.hook && <p className="line-clamp-2 text-xs italic text-zinc-400">“{c.hook}”</p>}

@@ -25,6 +25,10 @@ export interface ClipInfo {
   /** True when this clip fell below --min-retention and was segregated into
    *  exports/<job>/below_retention/ instead of the top-level tier. */
   belowRetentionFloor?: boolean;
+  /** v4 audit: false = a hard gate failed; degradations = reason codes shipped-but-compromised. */
+  auditPassed?: boolean;
+  degraded?: boolean;
+  degradations?: string[];
   files: { final: string; raw: string; srt: string; json: string };
 }
 
@@ -55,6 +59,9 @@ function mapManifestClips(manifest: any, belowRetentionFloor: boolean): ClipInfo
     predictedRetention: c.predicted_retention,
     arcComplete: c.arc_complete,
     belowRetentionFloor,
+    auditPassed: c.quality?.passed,
+    degraded: c.quality?.degraded,
+    degradations: c.quality?.degradations,
     files: {
       final: `${prefix}${c.clip_id}_final.mp4`,
       raw: `${prefix}${c.clip_id}_raw.mp4`,
