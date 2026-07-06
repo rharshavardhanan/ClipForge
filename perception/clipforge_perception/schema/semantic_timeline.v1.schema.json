@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "clipforge:semantic_timeline:v1",
+  "title": "ClipForge Semantic Timeline",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "job_id", "duration", "sample_fps", "producers_run",
+    "speakers", "audio_events", "scenes", "tracks", "objects", "depth", "vlm_captions"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "job_id": { "type": "string", "minLength": 1 },
+    "duration": { "type": "number", "minimum": 0 },
+    "sample_fps": { "type": "number", "exclusiveMinimum": 0 },
+    "producers_run": { "type": "array", "items": { "type": "string" } },
+    "speakers": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["id", "turns"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "turns": { "type": "array", "items": { "$ref": "#/$defs/span" } }
+        }
+      }
+    },
+    "audio_events": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["start", "end", "kind", "score"],
+        "properties": {
+          "start": { "type": "number", "minimum": 0 },
+          "end": { "type": "number", "minimum": 0 },
+          "kind": { "enum": ["laughter", "applause", "cheer", "impact", "music", "speech", "other"] },
+          "score": { "type": "number", "minimum": 0, "maximum": 1 }
+        }
+      }
+    },
+    "scenes": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["start", "end", "label"],
+        "properties": {
+          "start": { "type": "number", "minimum": 0 },
+          "end": { "type": "number", "minimum": 0 },
+          "label": { "type": "string" },
+          "embedding_ref": { "type": "string" }
+        }
+      }
+    },
+    "tracks": { "type": "array" },
+    "objects": { "type": "array" },
+    "depth": { "type": "array" },
+    "vlm_captions": { "type": "array" }
+  },
+  "$defs": {
+    "span": {
+      "type": "object", "additionalProperties": false,
+      "required": ["start", "end"],
+      "properties": {
+        "start": { "type": "number", "minimum": 0 },
+        "end": { "type": "number", "minimum": 0 }
+      }
+    }
+  }
+}
