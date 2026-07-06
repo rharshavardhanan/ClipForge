@@ -31,9 +31,10 @@ describe('captionGate', () => {
     expect(o.status).toBe('fail');
     if (o.status === 'fail') expect(o.reason).toBe(ReasonCode.QUALITY_CAPTION_OVERFLOW);
   });
-  it('too-fast cue → fail QUALITY_CAPTION_OVERFLOW', () => {
-    const cues = [{ start: 0, end: 1, lines: ['a'.repeat(60)] }];
-    expect(captionGate(cues, DEFAULT_CUE_CONSTRAINTS).outcome.status).toBe('fail');
+  it('too-fast cue (within line limits) → advisory autofix, not a hard fail', () => {
+    // 20 chars in 0.5s = 40 cps > 27, but one line ≤ 24 chars → layout is fine, speed is advisory
+    const cues = [{ start: 0, end: 0.5, lines: ['twenty chars exactly'] }];
+    expect(captionGate(cues, DEFAULT_CUE_CONSTRAINTS).outcome.status).toBe('autofix');
   });
 });
 
