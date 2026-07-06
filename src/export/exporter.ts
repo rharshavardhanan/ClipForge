@@ -5,6 +5,23 @@ import { buildSeoPack, writeSeoFiles, type SeoPack } from './seo.js';
 import { TICK } from '../avss/simulator.js';
 import type { ScoredVariant } from '../avss/variants.js';
 import type { EditDna } from '../avss/templates.js';
+import type { ClipQuality } from '../quality/audit.js';
+import type { ClipEdl } from '../report/edl.js';
+
+/** PURE: the clip.json `quality` block — flattened gate outcomes + degradation summary. */
+export function buildQualityBlock(q: ClipQuality) {
+  return {
+    passed: q.passed,
+    degraded: q.degraded,
+    degradations: q.degradations,
+    gates: q.gates.map((g) => ({
+      gate: g.gate,
+      status: g.outcome.status,
+      ...(g.outcome.status === 'fail' ? { reason: g.outcome.reason, detail: g.outcome.detail } : {}),
+      ...(g.outcome.status === 'autofix' ? { note: g.outcome.note } : {}),
+    })),
+  };
+}
 
 /** Everything the exporter needs to persist one clip's AVSS run. */
 export interface AvssExport {
@@ -92,6 +109,7 @@ export function buildClipJson(
   broll?: BrollSegment[],
   avss?: AvssExport,
   arc?: ArcExport,
+  quality?: ClipQuality,
 ) {
   return {
     clip_id: clip.clip_id, rank: clip.rank, source_video: clip.source_video ?? jobId,
@@ -107,6 +125,7 @@ export function buildClipJson(
     ...(broll && broll.length > 0 ? { broll: buildBrollEntries(broll) } : {}),
     ...(avss ? { avss: buildAvssBlock(avss) } : {}),
     ...(arc ? { arc } : {}),
+    ...(quality ? { quality: buildQualityBlock(quality) } : {}),
     files,
   };
 }
@@ -116,6 +135,7 @@ export function buildManifest(
   avssByClip?: Map<string, AvssExport>,
   arcByClip?: Map<string, ArcExport>,
   arcRejections?: ArcRejectionExport[],
+  qualityByClip?: Map<string, ClipQuality>,
 ) {
   const scores = clips.map((c) => c.composite_score);
   return {
@@ -126,10 +146,12 @@ export function buildManifest(
     clips: clips.map((c) => {
       const a = avssByClip?.get(c.clip_id);
       const arc = arcByClip?.get(c.clip_id);
+      const q = qualityByClip?.get(c.clip_id);
       return {
         ...c,
         ...(a ? { predicted_retention: +a.winner.sim.avgRetention.toFixed(4) } : {}),
         ...(arc ? { arc_complete: arc.complete } : {}),
+        ...(q ? { quality: { passed: q.passed, degraded: q.degraded, degradations: q.degradations } } : {}),
       };
     }),
     arc_rejections: arcRejections ?? [],
@@ -143,6 +165,8 @@ export async function writeExports(
   avssByClip?: Map<string, AvssExport>,
   arcByClip?: Map<string, ArcExport>,
   arcRejections?: ArcRejectionExport[],
+  qualityByClip?: Map<string, ClipQuality>,
+  edlByClip?: Map<string, ClipEdl>,
 ): Promise<void> {
   await mkdir(dir, { recursive: true });
   for (const clip of clips) {
@@ -160,10 +184,12 @@ export async function writeExports(
         await writeFile(join(dir, name), JSON.stringify(body, null, 2));
       }
     }
+    const edl = edlByClip?.get(clip.clip_id);
+    if (edl) await writeFile(join(dir, `${clip.clip_id}_edl.json`), JSON.stringify(edl, null, 2));
     await writeFile(join(dir, `${clip.clip_id}.json`),
-      JSON.stringify(buildClipJson(clip, jobId, files, pack, brollByClip?.get(clip.clip_id), avss, arcByClip?.get(clip.clip_id)), null, 2));
+      JSON.stringify(buildClipJson(clip, jobId, files, pack, brollByClip?.get(clip.clip_id), avss, arcByClip?.get(clip.clip_id), qualityByClip?.get(clip.clip_id)), null, 2));
   }
   await writeFile(join(dir, 'broll_manifest.json'), JSON.stringify(buildBrollManifest(clips, brollByClip), null, 2));
   await writeFile(join(dir, 'clips_manifest.json'),
-    JSON.stringify(buildManifest(jobId, source, meta, clips, avssByClip, arcByClip, arcRejections), null, 2));
+    JSON.stringify(buildManifest(jobId, source, meta, clips, avssByClip, arcByClip, arcRejections, qualityByClip), null, 2));
 }

@@ -202,3 +202,41 @@ describe('exporter arc blocks', () => {
     expect(m.clips[0].arc_complete).toBe(true);
   });
 });
+
+describe('quality + EDL exports (v4 Slice A)', () => {
+  const quality = {
+    gates: [{ gate: 'narrative', outcome: { status: 'pass' as const } }],
+    passed: true, degraded: true,
+    degradations: ['FRAMING_FALLBACK_CENTER_CROP'] as never,
+    reasonCodes: ['FRAMING_FALLBACK_CENTER_CROP'] as never,
+  };
+  const edl = {
+    clip_id: 'clip_001', source_span: { start: 10, end: 40 },
+    segments: [{ srcStart: 10, srcEnd: 40, speed: 1 }], framing: 'blur' as const,
+    crop_track: null, caption_cues: [], zoom_times: [], sfx_event_times: [],
+    audio_ops: [], caption_preset: 'mrbeast', music: true, rationale: {},
+  };
+
+  it('buildQualityBlock summarizes gates + degradation', async () => {
+    const { buildQualityBlock } = await import('../../src/export/exporter.js');
+    const b = buildQualityBlock(quality);
+    expect(b.passed).toBe(true);
+    expect(b.degraded).toBe(true);
+    expect(b.degradations).toContain('FRAMING_FALLBACK_CENTER_CROP');
+    expect(b.gates[0]).toMatchObject({ gate: 'narrative', status: 'pass' });
+  });
+
+  it('writeExports writes clip_NNN_edl.json + quality block only for clips in the maps', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'exports-qa-'));
+    const clip2: RankedClip = { ...clip, clip_id: 'clip_002', rank: 2 };
+    await writeExports(dir, 'H14bBuluwB8', 'src', meta, [clip, clip2], undefined, undefined,
+      undefined, undefined, undefined,
+      new Map([['clip_001', quality as never]]), new Map([['clip_001', edl as never]]));
+    const j1 = JSON.parse(await readFile(join(dir, 'clip_001.json'), 'utf8'));
+    expect(j1.quality.degraded).toBe(true);
+    expect(JSON.parse(await readFile(join(dir, 'clip_001_edl.json'), 'utf8')).clip_id).toBe('clip_001');
+    const j2 = JSON.parse(await readFile(join(dir, 'clip_002.json'), 'utf8'));
+    expect('quality' in j2).toBe(false);
+    await expect(readFile(join(dir, 'clip_002_edl.json'), 'utf8')).rejects.toThrow();
+  });
+});
