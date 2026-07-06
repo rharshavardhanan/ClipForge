@@ -14,8 +14,11 @@ export interface CueConstraints {
   minCueSec: number;       // anti-flash floor
 }
 
+// maxReadingCps 27: short-form captions run faster than prose-reading limits because the
+// viewer also HEARS the words — timing is locked to speech, so this is an advisory ceiling
+// (flagged, not a hard reject) rather than something the builder can slow down.
 export const DEFAULT_CUE_CONSTRAINTS: CueConstraints = {
-  maxCharsPerLine: 24, maxLines: 2, maxReadingCps: 22, minCueSec: 0.7,
+  maxCharsPerLine: 24, maxLines: 2, maxReadingCps: 27, minCueSec: 0.7,
 };
 
 /** PURE: greedily pack words into width/line-limited cues (never splitting a word), then

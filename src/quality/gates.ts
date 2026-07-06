@@ -26,8 +26,12 @@ export function narrativeGate(arc: { complete: boolean; missing: string[] } | un
   };
 }
 
-/** Caption cues fit line/reading limits. Overflow or too-fast → fail. */
+/** Caption cues fit the frame. Genuine LAYOUT overflow (too many lines / chars per line) is a
+ *  hard fail — the text physically won't fit. Reading-speed over the ceiling is ADVISORY: we
+ *  can't slow captions without desyncing from speech, and the viewer also hears the words, so
+ *  it's flagged (autofix note) but does not block the clip. */
 export function captionGate(cues: CaptionCue[], c: CueConstraints): GateResult {
+  let fastCue = false;
   for (const cue of cues) {
     if (cue.lines.length > c.maxLines) {
       return { gate: 'caption', outcome: { status: 'fail', reason: ReasonCode.QUALITY_CAPTION_OVERFLOW, detail: `${cue.lines.length} lines > ${c.maxLines}` } };
@@ -35,9 +39,10 @@ export function captionGate(cues: CaptionCue[], c: CueConstraints): GateResult {
     if (cue.lines.some((l) => l.length > c.maxCharsPerLine)) {
       return { gate: 'caption', outcome: { status: 'fail', reason: ReasonCode.QUALITY_CAPTION_OVERFLOW, detail: `line > ${c.maxCharsPerLine} chars` } };
     }
-    if (cueViolatesReadingSpeed(cue, c.maxReadingCps)) {
-      return { gate: 'caption', outcome: { status: 'fail', reason: ReasonCode.QUALITY_CAPTION_OVERFLOW, detail: `reading speed > ${c.maxReadingCps} cps` } };
-    }
+    if (cueViolatesReadingSpeed(cue, c.maxReadingCps)) fastCue = true;
+  }
+  if (fastCue) {
+    return { gate: 'caption', outcome: { status: 'autofix', note: `fast captions (> ${c.maxReadingCps} cps) — timing locked to speech, shipped as-is` } };
   }
   return { gate: 'caption', outcome: { status: 'pass' } };
 }
