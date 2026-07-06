@@ -1,0 +1,68 @@
+{
+  "clip_id": "clip_001",
+  "source_span": {
+    "start": 12.5,
+    "end": 40.5
+  },
+  "segments": [
+    {
+      "srcStart": 12.5,
+      "srcEnd": 40.5,
+      "speed": 1
+    }
+  ],
+  "framing": "crop",
+  "crop_track": [
+    {
+      "time": 0,
+      "cx": 960,
+      "cy": 500,
+      "cropW": 607,
+      "cropH": 1080
+    },
+    {
+      "time": 2,
+      "cx": 900,
+      "cy": 520,
+      "cropW": 607,
+      "cropH": 1080
+    }
+  ],
+  "caption_cues": [
+    {
+      "start": 0,
+      "end": 1.8,
+      "lines": [
+        "wait for it"
+      ]
+    },
+    {
+      "start": 1.8,
+      "end": 3.6,
+      "lines": [
+        "he actually",
+        "did it"
+      ]
+    }
+  ],
+  "zoom_times": [
+    3.2,
+    8.1
+  ],
+  "sfx_event_times": [
+    3.2
+  ],
+  "audio_ops": [
+    {
+      "type": "loudnorm",
+      "targetLufs": -14
+    }
+  ],
+  "caption_preset": "mrbeast",
+  "music": true,
+  "hook_text": "WAIT FOR IT",
+  "rationale": {
+    "director": "complete Q&A arc, laughter on payoff",
+    "framing": "full-screen face/speaker crop"
+  }
+}
