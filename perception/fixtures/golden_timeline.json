@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "job_id": "golden-fixture",
+  "duration": 60.0,
+  "sample_fps": 2,
+  "producers_run": ["mock"],
+  "speakers": [
+    { "id": "S0", "turns": [ { "start": 0.5, "end": 12.3 }, { "start": 20.0, "end": 34.5 } ] },
+    { "id": "S1", "turns": [ { "start": 12.3, "end": 20.0 } ] }
+  ],
+  "audio_events": [
+    { "start": 0.5, "end": 12.3, "kind": "speech", "score": 1.0 },
+    { "start": 18.0, "end": 19.5, "kind": "laughter", "score": 0.82 }
+  ],
+  "scenes": [
+    { "start": 0.0, "end": 30.0, "label": "intro" },
+    { "start": 30.0, "end": 60.0, "label": "demo", "embedding_ref": "clip/1.f32" }
+  ],
+  "tracks": [],
+  "objects": [],
+  "depth": [],
+  "vlm_captions": []
+}
