@@ -291,11 +291,10 @@ normalization to -14 LUFS + audio gate (#19 ✅); caption cue constraints `build
 subject-in-frame gate (#25 ✅); unified audit module `src/quality/audit.ts` (#30 ✅ — ADVISORY in Slice A: records, does not block); golden decision test (#3 ✅) + EDL round-trip (#32 ✅, decision-identity);
 `DEPENDENCIES.md` ✅. New pkgs `src/report/` + `src/quality/` + `src/audio/loudness.ts`. Audit is advisory — flip to hard-gating in a later slice once gates are trustworthy. cut-integrity gate trivially-passes until Slice C's segments exist. → After A: no silent degradation, every clip carries a `quality` block + EDL, decision drift fails CI. 670 tests.
 
-**Slice B — Director quality** *(better selection = fewer wasted renders)*
-Visual-feasibility features filling the dead `visual_score` (#12); topic segmentation via the
-existing semantic pass + diversity-penalized selection (#10); filler detection (#13);
-sentiment swing (#14); feature explanations in the report (#17); Timeline query facade as the
-enabling refactor (#9).
+**Slice B — Director quality** *(better selection = fewer wasted renders)* — ✅ BUILT 2026-07-06 (plan `2026-07-06-v4-slice-b-director-quality.md`, 7 tasks, commits through c097edd→smoke).
+Visual-feasibility feature filling the dead `visual_score` (#12 ✅ — `src/director/visualFeasibility.ts`: face presence + shot stability; sampled on arc survivors via a cheap windowed `detectFrameObs` at ~0.2fps; `visual_score` now 0-10, was hardcoded 0); topic segmentation via the
+existing semantic pass (#10 ✅ — `SemanticWindow.topic` label + `topicOf`) + diversity-penalized selection (#10 ✅ — `src/director/selectDiverse.ts` greedy composite + VISUAL_SELECT_WEIGHT·visual − DIVERSITY_LAMBDA·topic/source redundancy; REPLACED the arc-gate's pure composite `survivors.sort`); filler detection (#13 ✅ — `src/analysis/filler.ts` lexicon+ratio, FILLER_PENALTY_WEIGHT on the ranker sort key, composite untouched); feature explanations (#17 ✅ — `selection.why` block in clip.json via `buildSelectionWhy`).
+DEFERRED within B (documented): #9 Timeline facade (pure refactor, not behavioral), #14 sentiment swing (further prompt extension, low value now). 696 tests.
 
 **Slice C — Editor tightening** *(pacing = retention)*
 Internal cuts: dead-air + filler removal, segments + src↔out map, caption/zoom/broll remap
