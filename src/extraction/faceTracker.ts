@@ -5,6 +5,7 @@ import { run } from '../utils/cmd.js';
 import { mouthOpenness, associateTracks, pickActiveSpeaker } from './activeSpeaker.js';
 import { summarizeFraming, chooseFramingMode, type FramingMode } from './framing.js';
 import { detectSceneCuts, segmentByCuts } from './sceneCuts.js';
+import { smoothCameraAxis } from './camera.js';
 import type { ActiveSample, CropKeyframe, FaceBox, FaceSample, FrameObs } from '../types/index.js';
 
 const MIN_CROP_H_FRACTION = 0.2; // floor for cropH as a fraction of srcH, avoids degenerate tiny windows
@@ -130,8 +131,10 @@ export function smoothTrack(
   // Desired (raw, unsmoothed) crop window per sample.
   const desired = filled.map((box) => desiredWindowForBox(box, minCropH, maxCropH, srcH));
 
-  const smoothedCx = smoothSeriesBidirectional(desired.map((d) => d.cx), alpha);
-  const smoothedCy = smoothSeriesBidirectional(desired.map((d) => d.cy), alpha);
+  // Camera v2 (v4 Slice D): cx/cy follow a lock-on/hold-then-glide path instead of drifting
+  // continuously with the subject; cropH keeps its zoom hysteresis (already a hold behavior).
+  const smoothedCx = smoothCameraAxis(desired.map((d) => d.cx), srcW);
+  const smoothedCy = smoothCameraAxis(desired.map((d) => d.cy), srcH);
   const smoothedCropH = applyZoomHysteresis(
     smoothSeriesBidirectional(desired.map((d) => d.cropH), alpha),
     ZOOM_DEADBAND,
@@ -214,8 +217,9 @@ export function buildActiveSpeakerTrack(
     }
   }
 
-  const smoothedCx = smoothSeriesBidirectional(eased.map((d) => d.cx), alpha);
-  const smoothedCy = smoothSeriesBidirectional(eased.map((d) => d.cy), alpha);
+  // Camera v2 (v4 Slice D): lock-on/hold-then-glide over the (switch-eased) desired path.
+  const smoothedCx = smoothCameraAxis(eased.map((d) => d.cx), srcW);
+  const smoothedCy = smoothCameraAxis(eased.map((d) => d.cy), srcH);
   const smoothedCropH = applyZoomHysteresis(
     smoothSeriesBidirectional(eased.map((d) => d.cropH), alpha),
     ZOOM_DEADBAND,
