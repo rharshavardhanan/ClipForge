@@ -296,9 +296,9 @@ Visual-feasibility feature filling the dead `visual_score` (#12 ✅ — `src/dir
 existing semantic pass (#10 ✅ — `SemanticWindow.topic` label + `topicOf`) + diversity-penalized selection (#10 ✅ — `src/director/selectDiverse.ts` greedy composite + VISUAL_SELECT_WEIGHT·visual − DIVERSITY_LAMBDA·topic/source redundancy; REPLACED the arc-gate's pure composite `survivors.sort`); filler detection (#13 ✅ — `src/analysis/filler.ts` lexicon+ratio, FILLER_PENALTY_WEIGHT on the ranker sort key, composite untouched); feature explanations (#17 ✅ — `selection.why` block in clip.json via `buildSelectionWhy`).
 DEFERRED within B (documented): #9 Timeline facade (pure refactor, not behavioral), #14 sentiment swing (further prompt extension, low value now). 696 tests.
 
-**Slice C — Editor tightening** *(pacing = retention)*
-Internal cuts: dead-air + filler removal, segments + src↔out map, caption/zoom/broll remap
-(#18); pace engine (#23); stitch crossfades (#20); cut-integrity gate completes #30.
+**Slice C — Editor tightening** *(pacing = retention)* — ✅ BUILT 2026-07-06 (plan `2026-07-06-v4-slice-c-editor-tightening.md`, 7 tasks, commits through af77285→smoke).
+Internal cuts: dead-air + safe-filler removal, segments + src↔out map, caption/zoom/broll remap
+(#18 ✅ — `src/editor/timeMap.ts` property-tested TimeMap, `tighten.ts` planTighten protects hook/payoff + fail-soft to identity, `clipExtractor.buildSegmentedExtractArgs` select/aselect concat; all.ts remaps renderWords/zoomOut/overlays/thumbnail to the output timeline; EDL `segments` = kept spans); pace engine (#23 ✅ — `src/editor/pace.ts` paceTarget→paceToTighten); cut-integrity gate now REAL (#30 completed — `cutIntegrityGate`, 6th audit gate). `--no-tighten` flag. DEFERRED: #20 stitch crossfades (smoke-gated — cutting at silence edges minimizes clicks; add acrossfade only if the smoke reveals audible joins). AVSS/framing run pre-cut, tightening applied as a render-time remap (documented). 729 tests. Smoke on H14bBuluwB8 in flight — MUST listen for cut clicks (unit tests can't).
 
 **Slice D — Camera v2** *(the "locked then glides" look)*
 Deadband/lock-on + hold/move planning + motion bounds (#24); time-based switch hysteresis
