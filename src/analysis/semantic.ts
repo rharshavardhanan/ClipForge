@@ -17,6 +17,7 @@ export interface SemanticChunkResult {
   recommended_duration: number;
   sentiment: 'serious' | 'funny' | 'intense' | 'neutral';
   reason: string;
+  topic?: string;
 }
 
 export const BATCH_SIZE = 15;
@@ -59,11 +60,12 @@ Also extract, per window:
 - recommended_duration: best clip length in seconds — one of 30, 45, 60, 90
 - sentiment: one of "serious", "funny", "intense", "neutral"
 - reason: one sentence explaining why this window would or wouldn't work as a clip
+- topic: a 2-4 word label of what this window is ABOUT (used to de-duplicate similar clips so a pack shows range)
 
 Return ONLY a JSON ARRAY of exactly ${chunks.length} objects, in the SAME ORDER as the windows above (element 0 = WINDOW 1, element 1 = WINDOW 2, etc). Each object must use this exact shape:
 {
   "scores": { "emotional_intensity":0,"controversy":0,"humor":0,"surprise":0,"wisdom":0,"storytelling_tension":0,"argument_peak":0,"relatability":0 },
-  "hook_moment":"", "clip_titles":["","",""], "is_standalone":true, "recommended_duration":60, "sentiment":"neutral", "reason":""
+  "hook_moment":"", "clip_titles":["","",""], "is_standalone":true, "recommended_duration":60, "sentiment":"neutral", "reason":"", "topic":""
 }
 
 Do not return anything except the JSON array.`;
@@ -214,7 +216,19 @@ export function toWindow(chunk: TranscriptChunk, result: SemanticChunkResult): S
     recommended_duration: result.recommended_duration,
     sentiment: result.sentiment,
     reason: result.reason,
+    topic: result.topic ?? '',
   };
+}
+
+/** PURE: topic label of the semantic window best overlapping [start,end), '' if none/absent. */
+export function topicOf(start: number, end: number, semantic: SemanticWindow[]): string {
+  let best: SemanticWindow | null = null;
+  let bestOverlap = 0;
+  for (const sw of semantic) {
+    const overlap = Math.max(0, Math.min(end, sw.end) - Math.max(start, sw.start));
+    if (overlap > bestOverlap) { bestOverlap = overlap; best = sw; }
+  }
+  return best?.topic ?? '';
 }
 
 export async function analyzeSemantic(
