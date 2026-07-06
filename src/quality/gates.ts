@@ -6,7 +6,8 @@
  */
 import { cueViolatesReadingSpeed, type CaptionCue, type CueConstraints } from '../captions/captionCues.js';
 import { ReasonCode } from '../report/reasonCodes.js';
-import type { CropKeyframe, FaceSample } from '../types/index.js';
+import type { CropKeyframe, FaceSample, CaptionWord } from '../types/index.js';
+import type { KeepSegment } from '../editor/timeMap.js';
 
 export type GateOutcome =
   | { status: 'pass' }
@@ -62,6 +63,29 @@ export function audioGate(measuredLufs: number | null, targetLufs: number): Gate
 export function durationGate(durationSec: number, min: number, max: number): GateResult {
   if (durationSec >= min && durationSec <= max) return { gate: 'duration', outcome: { status: 'pass' } };
   return { gate: 'duration', outcome: { status: 'fail', reason: ReasonCode.CF_AUDIT_GATE_ERROR, detail: `${durationSec.toFixed(1)}s outside [${min},${max}]` } };
+}
+
+/** No kept-segment boundary may land strictly inside a word (v4 Part 3 §1: never cut mid-word).
+ *  `words` are PRE-cut (clip-relative source); `keep` are the clip-relative kept segments.
+ *  Identity keep (≤1 segment) always passes. */
+export function cutIntegrityGate(keep: KeepSegment[], words: CaptionWord[]): GateResult {
+  if (keep.length <= 1) return { gate: 'cut_integrity', outcome: { status: 'pass' } };
+  const boundaries: number[] = [];
+  for (let i = 0; i < keep.length; i++) {
+    if (i > 0) boundaries.push(keep[i].start);
+    if (i < keep.length - 1) boundaries.push(keep[i].end);
+  }
+  for (const w of words) {
+    for (const b of boundaries) {
+      if (w.start < b && b < w.end) {
+        return {
+          gate: 'cut_integrity',
+          outcome: { status: 'fail', reason: ReasonCode.EDITOR_CUT_ON_NON_BOUNDARY, detail: `word "${w.text}" [${w.start.toFixed(2)},${w.end.toFixed(2)}] split at ${b.toFixed(2)}s` },
+        };
+      }
+    }
+  }
+  return { gate: 'cut_integrity', outcome: { status: 'pass' } };
 }
 
 function nearest<T extends { time: number }>(items: T[], t: number): T {

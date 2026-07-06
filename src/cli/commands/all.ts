@@ -733,6 +733,7 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
         durationSec: clip.duration, lenMin: profile.lengths.min, lenMax: profile.lengths.max,
         faces, cropTrack: mode === 'crop' ? track : null, subjectFloor: SUBJECT_IN_FRAME_FLOOR,
         upstreamReasons: collectUpstreamReasons(mode, usedCenterFallback, isBelow),
+        keep: tighten.keep, preCutWords: captionWords,
       });
       qualityByClip.set(clip.clip_id, quality);
       edlByClip.set(clip.clip_id, buildClipEdl({
