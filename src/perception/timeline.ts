@@ -67,7 +67,7 @@ export function validateTimeline(obj: unknown): ValidateResult {
     if (!isRec(a) || !isTime(a.start) || !isTime(a.end)) e.push(`audio_events[${i}] needs numeric start/end >= 0`);
     else {
       if (!KIND_SET.has(a.kind as string)) e.push(`audio_events[${i}].kind '${String(a.kind)}' not in enum`);
-      if (typeof a.score !== 'number' || a.score < 0 || a.score > 1) e.push(`audio_events[${i}].score must be in [0,1]`);
+      if (!(typeof a.score === 'number' && Number.isFinite(a.score) && a.score >= 0 && a.score <= 1)) e.push(`audio_events[${i}].score must be in [0,1]`);
     }
   });
 
