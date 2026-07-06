@@ -53,6 +53,18 @@ function clampUnprotected(s: Span, lo: number, hi: number): Span | null {
   return end > start ? { start, end } : null;
 }
 
+/** Shrink a removal so neither edge lands strictly inside a word (silence-detection times
+ *  don't align to word timings — an un-snapped edge would clip a word and click). A word
+ *  fully inside the removal is fine to drop (it's an intentionally-removed filler / true gap). */
+function snapOutOfWords(s: Span, words: CaptionWord[]): Span | null {
+  let { start, end } = s;
+  for (const w of words) {
+    if (w.start < start && start < w.end) start = w.end;   // start is mid-word → push past it
+    if (w.start < end && end < w.end) end = w.start;       // end is mid-word → pull before it
+  }
+  return end > start ? { start, end } : null;
+}
+
 export function planTighten(
   durSec: number, silences: Span[], words: CaptionWord[], p: TightenParams = DEFAULT_TIGHTEN,
 ): TightenResult {
@@ -63,12 +75,14 @@ export function planTighten(
 
   const removals: Span[] = [];
 
-  // (a) Long silences — trimmed by keepBreath each side so the cut leaves a natural breath.
+  // (a) Long silences — trimmed by keepBreath each side so the cut leaves a natural breath,
+  // then snapped out of any word (silence times ≠ word times) so no boundary splits a word.
   for (const sil of silences) {
     if (sil.end - sil.start <= p.maxInternalSilenceSec) continue;
     const trimmed = { start: sil.start + p.keepBreathSec, end: sil.end - p.keepBreathSec };
     const c = clampUnprotected(trimmed, lo, hi);
-    if (c && c.end - c.start > 0) removals.push(c);
+    const snapped = c && snapOutOfWords(c, words);
+    if (snapped && snapped.end - snapped.start > 0) removals.push(snapped);
   }
 
   // (b) Filler words flanked by gaps ≥ fillerGapSec on both sides (safe to excise).

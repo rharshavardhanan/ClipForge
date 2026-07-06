@@ -67,4 +67,16 @@ describe('planTighten', () => {
     const r = planTighten(30, [{ start: 10, end: 14 }], talkyWords());
     if (!r.map.isIdentity) expect(r.map.totalOut).toBeGreaterThanOrEqual(MIN_KEPT_S);
   });
+
+  it('never places a kept boundary inside a word (snaps out of word-overlapping silences)', () => {
+    // a silence 10.0-14.0 whose edges overlap words: a word ends at 10.3, another starts at 13.7
+    const words = [...talkyWords().filter((x) => x.end <= 10.4 || x.start >= 13.6), w(9.8, 10.3), w(13.7, 14.2)];
+    const r = planTighten(30, [{ start: 10, end: 14 }], words);
+    const boundaries: number[] = [];
+    for (let i = 0; i < r.keep.length; i++) {
+      if (i > 0) boundaries.push(r.keep[i].start);
+      if (i < r.keep.length - 1) boundaries.push(r.keep[i].end);
+    }
+    for (const b of boundaries) for (const wd of words) expect(wd.start < b && b < wd.end).toBe(false);
+  });
 });

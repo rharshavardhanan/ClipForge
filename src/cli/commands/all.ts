@@ -730,7 +730,7 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
         arc: arcStatus.get(clip.clip_id),
         cues, cueConstraints: DEFAULT_CUE_CONSTRAINTS,
         measuredLufs: measuredForGate, targetLufs,
-        durationSec: clip.duration, lenMin: profile.lengths.min, lenMax: profile.lengths.max,
+        durationSec: tighten.map.totalOut, lenMin: profile.lengths.min, lenMax: profile.lengths.max,
         faces, cropTrack: mode === 'crop' ? track : null, subjectFloor: SUBJECT_IN_FRAME_FLOOR,
         upstreamReasons: collectUpstreamReasons(mode, usedCenterFallback, isBelow),
         keep: tighten.keep, preCutWords: captionWords,
