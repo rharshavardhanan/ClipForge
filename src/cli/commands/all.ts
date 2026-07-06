@@ -36,7 +36,8 @@ import { mixMusic } from '../../music/mixer.js';
 import { scanSfxLibrary } from '../../sfx/library.js';
 import { planSfx } from '../../sfx/events.js';
 import { mixSfx } from '../../sfx/mixer.js';
-import { writeExports } from '../../export/exporter.js';
+import { writeExports, buildSelectionWhy, type SelectionExport } from '../../export/exporter.js';
+import { fillerRatio } from '../../analysis/filler.js';
 import { buildCaptionCues, DEFAULT_CUE_CONSTRAINTS } from '../../captions/captionCues.js';
 import { runAudit, type ClipQuality } from '../../quality/audit.js';
 import { SUBJECT_IN_FRAME_FLOOR } from '../../quality/gates.js';
@@ -391,6 +392,7 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
   const provider = pickSemanticProvider(process.env);
   const arcRejections: ArcRejection[] = [];
   const arcStatus = new Map<string, ArcStatus>();          // keyed by FINAL clip_id
+  const selectionByClip = new Map<string, SelectionExport>(); // v4 Slice B: why each clip was picked
   let selected: SourcedRankedClip[];
   if (provider === 'none') {
     selected = rankAcrossAnalyses(pool, { top: opts.top, perVideoCap: opts.perVideoCap });
@@ -471,6 +473,21 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
     if (selected.length === 0) {
       logger.warn('arc gate: ZERO clips passed 6/6 — nothing to export. See the rejection table (--lenient to export anyway).');
     }
+  }
+
+  // v4 Slice B: record why each selected clip was picked (top feature contributions). A topic
+  // is "new" the first time it appears in the ordered selection; repeats aren't (diversity).
+  const seenTopics = new Set<string>();
+  for (const { clip, source } of selected) {
+    const topic = topicOf(clip.start, clip.end, source.semantic);
+    const isNew = topic !== '' && !seenTopics.has(topic);
+    if (topic) seenTopics.add(topic);
+    const visual = clip.visual_score / 10;
+    const filler = +fillerRatio(clip.transcript_excerpt).toFixed(2);
+    selectionByClip.set(clip.clip_id, {
+      features: { composite: clip.composite_score, visual: +visual.toFixed(2), semantic: clip.semantic_score, filler_penalty: filler, topic },
+      why: buildSelectionWhy({ visual, composite: clip.composite_score, semantic: clip.semantic_score, fillerPenalty: filler }, topic, isNew),
+    });
   }
 
   const id = analyses.length === 1 ? analyses[0].jobId : batchId(analyses.map((a) => a.url));
@@ -757,9 +774,9 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
   // it unchanged), while sub-floor clips get their own manifest under below_retention/.
   const aboveClips = ranked.filter((c) => !belowFloorIds.has(c.clip_id));
   const belowClips = ranked.filter((c) => belowFloorIds.has(c.clip_id));
-  await writeExports(exportsDir, id, primary.url, primary.meta, aboveClips, packs, brollByClip, avssByClip, arcByClip, arcRejections, qualityByClip, edlByClip);
+  await writeExports(exportsDir, id, primary.url, primary.meta, aboveClips, packs, brollByClip, avssByClip, arcByClip, arcRejections, qualityByClip, edlByClip, selectionByClip);
   if (belowClips.length > 0) {
-    await writeExports(belowDir, id, primary.url, primary.meta, belowClips, packs, brollByClip, avssByClip, arcByClip, [], qualityByClip, edlByClip);
+    await writeExports(belowDir, id, primary.url, primary.meta, belowClips, packs, brollByClip, avssByClip, arcByClip, [], qualityByClip, edlByClip, selectionByClip);
   }
 
   // Per-run report: every clip's audit outcome + a tally of every reason code that fired.
