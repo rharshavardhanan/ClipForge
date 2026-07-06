@@ -4,11 +4,12 @@
  * timing, audio ops, and the rationale. Persisted as clip_NNN_edl.json; the golden test
  * asserts it doesn't drift silently. PURE assembly — no I/O.
  *
- * Slice A: `segments` is always one full-span 1.0x cut (internal tightening arrives in
- * Slice C, which will populate real multi-segment cuts here).
+ * Slice C: `segments` is the kept spans (absolute source seconds) the editor's tightening
+ * concatenated — one full-span cut when nothing was removed.
  */
 import type { CropKeyframe, RankedClip } from '../types/index.js';
 import type { CaptionCue } from '../captions/captionCues.js';
+import type { KeepSegment } from '../editor/timeMap.js';
 
 export interface EdlSegment { srcStart: number; srcEnd: number; speed: number; }
 
@@ -39,13 +40,18 @@ export function buildClipEdl(args: {
   music: boolean;
   hookText?: string;
   audioOps: { type: string; [k: string]: unknown }[];
+  /** Kept spans in ABSOLUTE source seconds (editor tightening). Absent → one full span. */
+  keep?: KeepSegment[];
   rationale: { director?: string; editor?: string; framing?: string };
 }): ClipEdl {
   const { clip } = args;
+  const segments = args.keep && args.keep.length > 0
+    ? args.keep.map((k) => ({ srcStart: k.start, srcEnd: k.end, speed: 1 }))
+    : [{ srcStart: clip.start, srcEnd: clip.end, speed: 1 }];
   return {
     clip_id: clip.clip_id,
     source_span: { start: clip.start, end: clip.end },
-    segments: [{ srcStart: clip.start, srcEnd: clip.end, speed: 1 }],
+    segments,
     framing: args.framing,
     crop_track: args.framing === 'crop' ? args.cropTrack : null,
     caption_cues: args.cues,

@@ -46,9 +46,13 @@ import { buildRunReport, writeRunReport, type RunReportClip } from '../../report
 import { ReasonCode } from '../../report/reasonCodes.js';
 import { normalizeLoudness, TARGET_LUFS } from '../../audio/loudness.js';
 import { detectFrameObs } from '../../extraction/faceTracker.js';
+import { extractTightened } from '../../extraction/clipExtractor.js';
 import { scoreVisualFeasibility } from '../../director/visualFeasibility.js';
 import { selectDiverse, type Selectable } from '../../director/selectDiverse.js';
 import { topicOf } from '../../analysis/semantic.js';
+import { planTighten, DEFAULT_TIGHTEN } from '../../editor/tighten.js';
+import { paceTarget, paceToTighten } from '../../editor/pace.js';
+import { identityTimeMap, mapWords, mapTimes, mapRms, srcToOut, isKept, type KeepSegment } from '../../editor/timeMap.js';
 import { buildSeoPack, type SeoPack } from '../../export/seo.js';
 import { pickThumbnailTime, generateThumbnail } from '../../export/thumbnail.js';
 import { MODE_PROFILES, resolveMode, resolveFraming } from '../../modes.js';
@@ -133,6 +137,8 @@ export interface AllOpts {
   loudnorm?: boolean;
   /** Integrated-loudness target in LUFS (default -14, the Shorts/TikTok norm). */
   targetLufs?: number;
+  /** Editor tightening (remove dead air + safe filler). Default on; false = keep clips whole. */
+  tighten?: boolean;
 }
 
 /** PURE: files/dirs to remove when --delete-source is set — the big source download and the
@@ -165,6 +171,20 @@ async function pathSizeBytes(p: string): Promise<number> {
 /** PURE: coerce a preset name onto the legacy Remotion style prop (unknown → bold). */
 export function legacyStyle(preset: string): 'minimal' | 'card' | 'bold' {
   return preset === 'minimal' || preset === 'card' ? preset : 'bold';
+}
+
+/** PURE: source-time silence regions → clip-relative, clipped to [0, clipEnd-clipStart] (v4 Slice C). */
+export function clipRelativeSilences(
+  silences: { start: number; end: number }[], clipStart: number, clipEnd: number,
+): { start: number; end: number }[] {
+  const dur = clipEnd - clipStart;
+  const out: { start: number; end: number }[] = [];
+  for (const s of silences) {
+    const start = Math.max(0, s.start - clipStart);
+    const end = Math.min(dur, s.end - clipStart);
+    if (end > start) out.push({ start, end });
+  }
+  return out;
 }
 
 /** PURE: map an arc survivor to the diversity selector's input (v4 Slice B). visual is 0-1. */
@@ -543,10 +563,22 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
       const captionWords = buildCaptionWords(clipWords, clip.start, source.triggers.map((t) => t.phrase));
       // SRT is written per-tier once the retention tier (top vs. below_retention/) is known below.
 
+      // v4 Slice C: plan internal cuts (dead air + safe filler). AVSS + framing run on the
+      // pre-cut timeline; the cut is applied to the extract, and everything the RENDER consumes
+      // (words/zoom/broll) is remapped through the TimeMap just before render so the whole
+      // render lives on one (compressed, output) timeline. Identity map = no behavior change.
+      const clipRms = source.audio.rms_curve.filter((p) => p.time >= clip.start && p.time <= clip.end);
+      const meanRms = clipRms.length ? clipRms.reduce((a, p) => a + p.rms, 0) / clipRms.length : 5;
+      const pace = paceTarget({ wordsPerSec: captionWords.length / Math.max(clip.duration, 1e-6), meanRms, mode: source.mode });
+      const tighten = opts.tighten === false
+        ? { keep: [{ start: 0, end: clip.duration }] as KeepSegment[], map: identityTimeMap(clip.duration), removedSec: 0 }
+        : planTighten(clip.duration, clipRelativeSilences(source.audio.silence_regions, clip.start, clip.end), captionWords, paceToTighten(pace));
+
       // Both modes render from the full 16:9 extract: 'crop' pans/zooms a face track over it,
       // 'blur' centers it over a blurred backdrop. Blur is the default (natural, no face cutting).
+      // The extract is CUT to the kept segments (Slice C); planFraming then sees output time.
       const fullPath = join(clipsDir, `${clip.clip_id}_full.mp4`);
-      await extractFullFrame(source.videoPath, clip.start, clip.end, fullPath);
+      await extractTightened(source.videoPath, clip.start, clip.duration, tighten.keep, fullPath);
       const { mode, track, faces } = await planFraming(fullPath, source.meta.width, source.meta.height, 3,
         resolveFraming(opts.framing, profile), dims.ratio);
 
@@ -597,6 +629,17 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
         logger.warn(`[${clip.clip_id}] avss simulation failed — using base plan: ${e instanceof Error ? e.message : String(e)}`);
       }
 
+      // v4 Slice C: apply the internal cuts to everything the RENDER consumes → output timeline
+      // (matches the cut extract's cropTrack/faces). Identity map = these are no-ops.
+      const renderWords = mapWords(tighten.map, captionWords);
+      const zoomOut = mapTimes(tighten.map, plan.zoom.times);
+      const overlaysOut = overlays
+        .filter((o) => isKept(tighten.map, o.atSec))
+        .map((o) => ({ ...o, atSec: srcToOut(tighten.map, o.atSec) }));
+      if (overlaysOut.length > 0) brollByClip.set(clip.clip_id, overlaysOut);
+      else brollByClip.delete(clip.clip_id);
+      if (tighten.removedSec > 0) logger.info(`[${clip.clip_id}] tightened −${tighten.removedSec.toFixed(1)}s (${tighten.keep.length} segments)`);
+
       // Retention tier: a complete-story clip can still simulate below the watchable bar. It's
       // NOT dropped — it renders into the below_retention/ subfolder so it's segregated but kept.
       // A failed simulation (no prediction) can't be judged, so it stays in the top tier.
@@ -608,28 +651,28 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
       const outDir = isBelow ? belowDir : exportsDir;
       await mkdir(outDir, { recursive: true });
       const finalPath = join(outDir, `${clip.clip_id}_final.mp4`);
-      await writeSrt(captionWords, join(outDir, `${clip.clip_id}.srt`));
+      await writeSrt(renderWords, join(outDir, `${clip.clip_id}.srt`));
 
       // Arrow callouts at the speaker's face on the same peak moments the zooms hit —
-      // suppressed while B-roll covers the face. Rides the WINNER's zoom times.
-      const callouts = filterCallouts(plan.zoom.times.length === 0 ? [] : planCallouts(
-        plan.zoom.times, faces,
+      // suppressed while B-roll covers the face. Rides the WINNER's zoom times (output timeline).
+      const callouts = filterCallouts(zoomOut.length === 0 ? [] : planCallouts(
+        zoomOut, faces,
         { mode, track, srcW: source.meta.width, srcH: source.meta.height },
-      ), overlays);
+      ), overlaysOut);
 
       // Caption preset: explicit --style/--caption pin wins; otherwise the winner plan's.
       const caption = opts.caption ?? resolveCaptionStyle(plan.captionPreset, opts.captionOverrides ?? {});
 
       await render({
-        rawClipPath: fullPath, words: captionWords, outPath: finalPath, fps: source.meta.fps,
+        rawClipPath: fullPath, words: renderWords, outPath: finalPath, fps: source.meta.fps,
         accentColor, style: legacyStyle(plan.captionPreset), caption, zooms: opts.zooms,
         zoomIntensity: plan.zoom.intensity,
-        zoomTimes: plan.zoom.times,
+        zoomTimes: zoomOut,
         framing: mode,
         outWidth: dims.outW, outHeight: dims.outH,
         ...(mode === 'crop' ? { cropTrack: track, srcW: source.meta.width, srcH: source.meta.height } : {}),
         ...(callouts.length > 0 ? { callouts } : {}),
-        ...(overlays.length > 0 ? { broll: overlays } : {}),
+        ...(overlaysOut.length > 0 ? { broll: overlaysOut } : {}),
         hookText: plan.hookText,
       });
       if (callouts.length > 0) logger.info(`[${clip.clip_id}] ${callouts.length} arrow callout(s)`);
@@ -639,7 +682,7 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
 
       // sound design: impact under the hook card + whooshes on the winner's zoom times
       // (visuals and sounds share the plan's array by construction).
-      const sfxEvents = plan.sfx.enabled ? planSfx(plan.zoom.times, sfxLib, {
+      const sfxEvents = plan.sfx.enabled ? planSfx(zoomOut, sfxLib, {
         hasHook: Boolean(plan.hookText), seed: `${source.jobId}_${clip.clip_id}`,
       }) : [];
       if (sfxEvents.length) {
@@ -679,8 +722,9 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
         }
       }
 
-      // Pre-export audit (advisory in Slice A): gates + reason codes → clip.json quality block.
-      const cues = buildCaptionCues(captionWords);
+      // Pre-export audit: gates + reason codes → clip.json quality block. Cues on the OUTPUT
+      // timeline (post-cut); cut integrity is checked against the pre-cut words + kept segments.
+      const cues = buildCaptionCues(renderWords);
       const usedCenterFallback = mode === 'crop' && faces.filter((f) => f.box).length === 0;
       const quality = runAudit({
         arc: arcStatus.get(clip.clip_id),
@@ -693,12 +737,14 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
       qualityByClip.set(clip.clip_id, quality);
       edlByClip.set(clip.clip_id, buildClipEdl({
         clip, framing: mode, cropTrack: track, cues,
-        zoomTimes: plan.zoom.times, sfxTimes: sfxEvents.map((e) => e.time),
+        zoomTimes: zoomOut, sfxTimes: sfxEvents.map((e) => e.time),
         captionPreset: plan.captionPreset, music: Boolean(musicTrack), hookText: plan.hookText,
         audioOps: opts.loudnorm === false ? [] : [{ type: 'loudnorm', targetLufs }],
+        keep: tighten.keep.map((k) => ({ start: clip.start + k.start, end: clip.start + k.end })),
         rationale: {
           director: clip.reason,
           framing: mode === 'crop' ? 'full-screen face/speaker crop' : 'blur backdrop',
+          ...(tighten.removedSec > 0 ? { editor: `tightened −${tighten.removedSec.toFixed(1)}s (${tighten.keep.length} segments)` } : {}),
         },
       }));
       if (!quality.passed) logger.warn(`[${clip.clip_id}] audit: ${quality.reasonCodes.join(', ')}`);
@@ -706,7 +752,9 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
       // thumbnail: loudest frame of the clip, stamped with the SEO thumbnail text.
       // Never fail a fully-rendered clip over a PNG — warn and move on.
       try {
-        const thumbRel = Math.max(0, pickThumbnailTime(clip, source.audio.rms_curve) - clip.start);
+        // Thumbnail time is on the OUTPUT timeline (fullPath is the cut clip); map the chosen
+        // source moment through the TimeMap so it lands on kept footage.
+        const thumbRel = srcToOut(tighten.map, Math.max(0, pickThumbnailTime(clip, source.audio.rms_curve) - clip.start));
         // Zoom the thumbnail toward the face nearest the chosen moment (looser 2s tolerance).
         const thumbFace = faceAt(faces, thumbRel, 2);
         await generateThumbnail(fullPath, thumbRel, pack.thumbnailText, join(outDir, `${clip.clip_id}_thumbnail.png`), {
