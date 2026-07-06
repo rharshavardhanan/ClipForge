@@ -1,5 +1,10 @@
 import type { ArcLabel, ClipCandidate, RankedClip, SemanticScores, SemanticWindow, TranscriptSegment, WindowScore } from '../types/index.js';
 import { arcScore } from '../analysis/arcTypes.js';
+import { fillerRatio } from '../analysis/filler.js';
+
+/** Sort-key penalty per unit filler ratio (v4 Slice B) — a rambling, filler-dense candidate
+ *  ranks below a tight one. Sort-only, like the mode priority boost; composite is untouched. */
+export const FILLER_PENALTY_WEIGHT = 2.0;
 
 /** PURE: v7 spec §5 — for ARC-LABELED candidates, story completeness joins the
  *  composite at weight 0.25 (renormalized). Unlabeled candidates keep their raw
@@ -67,13 +72,16 @@ export function rank(
     .filter((c) => c.composite >= min)
     .map((cand) => {
       const sw = semantic.length > 0 ? findOverlappingSemantic(cand.start, cand.end, semantic) : null;
-      return { cand, sw, adjusted: arcWeightedComposite(cand.composite, cand.arc) + priorityBoost(sw, opts.priorities) };
+      const text = clipText(cand, segments);
+      const adjusted = arcWeightedComposite(cand.composite, cand.arc)
+        + priorityBoost(sw, opts.priorities)
+        - FILLER_PENALTY_WEIGHT * fillerRatio(text);
+      return { cand, sw, text, adjusted };
     })
     .sort((a, b) => b.adjusted - a.adjusted);
 
   const kept: { cand: ClipCandidate; text: string; sw: SemanticWindow | null }[] = [];
-  for (const { cand, sw } of scored) {
-    const text = clipText(cand, segments);
+  for (const { cand, sw, text } of scored) {
     if (kept.some((k) => overlapRatio(k.text, text) > 0.4)) continue;
     // Drop non-standalone clips that aren't otherwise strong enough — only when semantic data exists.
     if (semantic.length > 0 && sw && sw.is_standalone === false && cand.composite < 7) continue;
