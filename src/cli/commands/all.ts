@@ -37,6 +37,13 @@ import { scanSfxLibrary } from '../../sfx/library.js';
 import { planSfx } from '../../sfx/events.js';
 import { mixSfx } from '../../sfx/mixer.js';
 import { writeExports } from '../../export/exporter.js';
+import { buildCaptionCues, DEFAULT_CUE_CONSTRAINTS } from '../../captions/captionCues.js';
+import { runAudit, type ClipQuality } from '../../quality/audit.js';
+import { SUBJECT_IN_FRAME_FLOOR } from '../../quality/gates.js';
+import { buildClipEdl, type ClipEdl } from '../../report/edl.js';
+import { buildRunReport, writeRunReport, type RunReportClip } from '../../report/runReport.js';
+import { ReasonCode } from '../../report/reasonCodes.js';
+import { normalizeLoudness, TARGET_LUFS } from '../../audio/loudness.js';
 import { buildSeoPack, type SeoPack } from '../../export/seo.js';
 import { pickThumbnailTime, generateThumbnail } from '../../export/thumbnail.js';
 import { MODE_PROFILES, resolveMode, resolveFraming } from '../../modes.js';
@@ -117,6 +124,10 @@ export interface AllOpts {
    *  below this is hard-dropped before render. Default 0.75. Clips whose simulation failed
    *  (no prediction) are kept. */
   minRetention?: number;
+  /** Loudness-normalize the final mix to --target-lufs. Default on; false = ship source loudness. */
+  loudnorm?: boolean;
+  /** Integrated-loudness target in LUFS (default -14, the Shorts/TikTok norm). */
+  targetLufs?: number;
 }
 
 /** PURE: files/dirs to remove when --delete-source is set — the big source download and the
@@ -149,6 +160,16 @@ async function pathSizeBytes(p: string): Promise<number> {
 /** PURE: coerce a preset name onto the legacy Remotion style prop (unknown → bold). */
 export function legacyStyle(preset: string): 'minimal' | 'card' | 'bold' {
   return preset === 'minimal' || preset === 'card' ? preset : 'bold';
+}
+
+/** PURE: reason codes gathered during render that the audit should surface as degradations. */
+export function collectUpstreamReasons(
+  framingMode: 'blur' | 'crop', usedCenterFallback: boolean, belowFloor: boolean,
+): ReasonCode[] {
+  const codes: ReasonCode[] = [];
+  if (framingMode === 'crop' && usedCenterFallback) codes.push(ReasonCode.FRAMING_FALLBACK_CENTER_CROP);
+  if (belowFloor) codes.push(ReasonCode.CF_BELOW_RETENTION_FLOOR);
+  return codes;
 }
 
 /** PURE: which AVSS variant dimensions the user's explicit flags freeze. */
@@ -459,6 +480,8 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
   const packs = new Map<string, SeoPack>();
   const brollByClip = new Map<string, BrollSegment[]>();
   const avssByClip = new Map<string, AvssExport>();
+  const qualityByClip = new Map<string, ClipQuality>();
+  const edlByClip = new Map<string, ClipEdl>();
   // AVSS retention floor. Clips are NOT dropped: those whose winning variant simulates below
   // the floor still render, but into the exports/<job>/below_retention/ subfolder instead of the
   // top-level dir. Set --min-retention 0 to send everything to the top level.
@@ -597,6 +620,50 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
         logger.info(`[${clip.clip_id}] music: ${basename(musicTrack)} (${mood})`);
       }
 
+      // Loudness normalization — the LAST audio step so it normalizes the final mix
+      // (speech + sfx + music). Fail-soft: on measurement/apply failure the original ships.
+      const targetLufs = opts.targetLufs ?? TARGET_LUFS;
+      let measuredForGate: number | null;
+      if (opts.loudnorm === false) {
+        measuredForGate = targetLufs;                 // opted out → don't flag as un-normalized
+      } else {
+        const tmpLoud = finalPath.replace(/\.mp4$/, '.loud.mp4');
+        const m = await normalizeLoudness(finalPath, tmpLoud, targetLufs);
+        if (m) {
+          await rename(tmpLoud, finalPath);
+          measuredForGate = m.input_i;                // pre-norm level; audit → pass or "adjusted"
+          logger.info(`[${clip.clip_id}] loudness: ${m.input_i.toFixed(1)} → ${targetLufs} LUFS`);
+        } else {
+          await rm(tmpLoud, { force: true });
+          measuredForGate = null;                     // measurement failed → audit records a gate error
+          logger.warn(`[${clip.clip_id}] loudness normalization unavailable — shipping source loudness`);
+        }
+      }
+
+      // Pre-export audit (advisory in Slice A): gates + reason codes → clip.json quality block.
+      const cues = buildCaptionCues(captionWords);
+      const usedCenterFallback = mode === 'crop' && faces.filter((f) => f.box).length === 0;
+      const quality = runAudit({
+        arc: arcStatus.get(clip.clip_id),
+        cues, cueConstraints: DEFAULT_CUE_CONSTRAINTS,
+        measuredLufs: measuredForGate, targetLufs,
+        durationSec: clip.duration, lenMin: profile.lengths.min, lenMax: profile.lengths.max,
+        faces, cropTrack: mode === 'crop' ? track : null, subjectFloor: SUBJECT_IN_FRAME_FLOOR,
+        upstreamReasons: collectUpstreamReasons(mode, usedCenterFallback, isBelow),
+      });
+      qualityByClip.set(clip.clip_id, quality);
+      edlByClip.set(clip.clip_id, buildClipEdl({
+        clip, framing: mode, cropTrack: track, cues,
+        zoomTimes: plan.zoom.times, sfxTimes: sfxEvents.map((e) => e.time),
+        captionPreset: plan.captionPreset, music: Boolean(musicTrack), hookText: plan.hookText,
+        audioOps: opts.loudnorm === false ? [] : [{ type: 'loudnorm', targetLufs }],
+        rationale: {
+          director: clip.reason,
+          framing: mode === 'crop' ? 'full-screen face/speaker crop' : 'blur backdrop',
+        },
+      }));
+      if (!quality.passed) logger.warn(`[${clip.clip_id}] audit: ${quality.reasonCodes.join(', ')}`);
+
       // thumbnail: loudest frame of the clip, stamped with the SEO thumbnail text.
       // Never fail a fully-rendered clip over a PNG — warn and move on.
       try {
@@ -668,10 +735,27 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
   // it unchanged), while sub-floor clips get their own manifest under below_retention/.
   const aboveClips = ranked.filter((c) => !belowFloorIds.has(c.clip_id));
   const belowClips = ranked.filter((c) => belowFloorIds.has(c.clip_id));
-  await writeExports(exportsDir, id, primary.url, primary.meta, aboveClips, packs, brollByClip, avssByClip, arcByClip, arcRejections);
+  await writeExports(exportsDir, id, primary.url, primary.meta, aboveClips, packs, brollByClip, avssByClip, arcByClip, arcRejections, qualityByClip, edlByClip);
   if (belowClips.length > 0) {
-    await writeExports(belowDir, id, primary.url, primary.meta, belowClips, packs, brollByClip, avssByClip, arcByClip, []);
+    await writeExports(belowDir, id, primary.url, primary.meta, belowClips, packs, brollByClip, avssByClip, arcByClip, [], qualityByClip, edlByClip);
   }
+
+  // Per-run report: every clip's audit outcome + a tally of every reason code that fired.
+  const reportClips: RunReportClip[] = ranked.map((c) => {
+    const q = qualityByClip.get(c.clip_id);
+    const a = avssByClip.get(c.clip_id);
+    return {
+      clip_id: c.clip_id,
+      passed: q?.passed ?? true,
+      degraded: q?.degraded ?? false,
+      degradations: q?.degradations ?? [],
+      ...(a ? { predicted_retention: +a.winner.sim.avgRetention.toFixed(4) } : {}),
+      tier: belowFloorIds.has(c.clip_id) ? 'below_retention' as const : 'top' as const,
+    };
+  });
+  await writeRunReport(exportsDir, buildRunReport(id, primary.url, reportClips, []));
+  const rep = { passed: reportClips.filter((c) => c.passed).length, degraded: reportClips.filter((c) => c.degraded).length };
+  logger.info(`audit: ${rep.passed}/${reportClips.length} passed all gates, ${rep.degraded} degraded → run_report.json`);
 
   const baseHead = analyses.length === 1 ? ['Rank', 'Score', 'Dur', 'Excerpt'] : ['Rank', 'Score', 'Dur', 'Source', 'Excerpt'];
   const head = belowFloor.length > 0 ? [...baseHead, 'Tier'] : baseHead;

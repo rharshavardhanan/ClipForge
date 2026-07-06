@@ -42,6 +42,8 @@ function addRenderOptions(cmd: Command): Command {
     .option('--no-sfx', 'disable sound-design SFX (whoosh on zooms, impact under hook)')
     .option('--sfx-volume <v>', 'SFX one-shot level 0-1', (v) => parseFloat(v), 0.6)
     .option('--sfx-dir <p>', 'SFX library folder', process.env.SFX_DIR ?? './sfx')
+    .option('--no-loudnorm', 'skip loudness normalization (ship source loudness)')
+    .option('--target-lufs <n>', 'integrated-loudness target in LUFS', (v) => parseFloat(v), -14)
     .option('--delete-source', 'delete the downloaded source video + intermediates after export (frees disk)')
     .option('--allow-repeats', 'allow re-exporting moments already used by previous runs of the same video')
     .option('--arc-topk <n>', 'candidates given the arc completion + 6/6 story gate (min = --top)', (v) => parseInt(v, 10), 8)
@@ -71,6 +73,7 @@ function renderOpts(o: any) {
     mode: o.mode, broll: o.broll, brollDir: o.brollDir, maxBroll: o.maxBroll,
     music: o.music, musicVolume: o.musicVolume, musicDir: o.musicDir, zooms: o.zooms,
     sfx: o.sfx, sfxVolume: o.sfxVolume, sfxDir: o.sfxDir,
+    loudnorm: o.loudnorm, targetLufs: o.targetLufs,
     deleteSource: o.deleteSource, allowRepeats: o.allowRepeats,
     arcTopk: o.arcTopk, lenient: o.lenient,
     // CLI takes a percentage (75); the pipeline gates on a 0-1 fraction.
