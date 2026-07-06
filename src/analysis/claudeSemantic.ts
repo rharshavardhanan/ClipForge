@@ -38,7 +38,7 @@ export function buildBatchSchema(): Record<string, unknown> {
   const window = {
     type: 'object',
     additionalProperties: false,
-    required: ['scores', 'hook_moment', 'clip_titles', 'is_standalone', 'recommended_duration', 'sentiment', 'reason'],
+    required: ['scores', 'hook_moment', 'clip_titles', 'is_standalone', 'recommended_duration', 'sentiment', 'reason', 'topic'],
     properties: {
       scores,
       hook_moment: { type: 'string' },
@@ -47,6 +47,7 @@ export function buildBatchSchema(): Record<string, unknown> {
       recommended_duration: { type: 'integer', enum: [30, 45, 60, 90] },
       sentiment: { type: 'string', enum: ['serious', 'funny', 'intense', 'neutral'] },
       reason: { type: 'string' },
+      topic: { type: 'string' },
     },
   };
   return {
