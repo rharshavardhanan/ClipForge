@@ -44,4 +44,15 @@ describe('validateTimeline', () => {
     expect(validateTimeline(null).ok).toBe(false);
     expect(validateTimeline('x').ok).toBe(false);
   });
+
+  it('rejects an out-of-range score', () => {
+    const res = validateTimeline({ ...golden(), audio_events: [{ start: 0, end: 1, kind: 'speech', score: 5 }] });
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.errors.join(' ')).toMatch(/score/);
+  });
+
+  it('rejects a NaN score', () => {
+    const res = validateTimeline({ ...golden(), audio_events: [{ start: 0, end: 1, kind: 'speech', score: NaN }] });
+    expect(res.ok).toBe(false);
+  });
 });
