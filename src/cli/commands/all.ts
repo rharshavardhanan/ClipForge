@@ -18,6 +18,7 @@ import { rank, defaultMinScore, arcWeightedComposite } from '../../clipDetection
 import { motionLayer } from '../../analysis/motion.js';
 import { chunkTranscript } from '../../analysis/arcChunker.js';
 import { mineArcs, mergeMinedCandidates } from '../../analysis/arcMiner.js';
+import { generateArcTemplateCandidates, mergeTemplateCandidates } from '../../director/arcTemplates.js';
 import { buildEvidenceBlock } from '../../analysis/arcEvidence.js';
 import { extractKeyframes, keyframeTimes, peakTime } from '../../analysis/keyframes.js';
 import { completeArc, gateArc, resolveBounds, type ArcCompletion } from '../../analysis/arcCompleter.js';
@@ -296,7 +297,16 @@ export async function analyzeVideo(url: string, opts: AllOpts): Promise<VideoAna
     logger.warn('arc engine OFF — no LLM provider (SEMANTIC_PROVIDER/keys); story gate disabled, pipeline runs as before');
   }
 
-  return { jobId, url, videoPath: dl.videoPath, meta, segments, triggers, audio, semantic, candidates: arcCandidates, mode: profile.name, motion };
+  // v4 Slice E: pure arc-template candidates (Q&A exchanges, reaction/punchline anchors) the
+  // sliding window misses. Merged into the pool (dedup vs window/arc); flow through the same
+  // rank → 6/6 gate → select → tighten → render path. Works with the LLM off (no cost).
+  const templates = generateArcTemplateCandidates(segments, triggers, audio, profile.lengths, meta.duration);
+  const finalCandidates = mergeTemplateCandidates(arcCandidates, templates);
+  if (finalCandidates.length > arcCandidates.length) {
+    logger.info(`arc templates: +${finalCandidates.length - arcCandidates.length} Q&A/reaction candidate(s)`);
+  }
+
+  return { jobId, url, videoPath: dl.videoPath, meta, segments, triggers, audio, semantic, candidates: finalCandidates, mode: profile.name, motion };
 }
 
 /**
