@@ -284,12 +284,11 @@ Numbered deltas above; grouped into slices, dependency-ordered. Each slice = one
 design→plan→build cycle on `slice-1`, gated by the standing test/build gates, system stays
 live throughout.
 
-**Slice A — Audit & report backbone** *(foundation; everything else hooks into it)*
-Reason-code enum + per-run `run_report.json` (#1); EDL persisted per clip (#2); loudness
-normalization + audio gate (#19); caption cue constraints (#22) + shared safe-area rect (#21);
-subject-in-frame gate (#25); unified audit module (#30); golden decision tests (#3) + render
-determinism round-trip (#32); `DEPENDENCIES.md`. → After A: no silent degradation anywhere,
-every clip carries a quality block, decision drift fails CI.
+**Slice A — Audit & report backbone** *(foundation; everything else hooks into it)* — ✅ BUILT 2026-07-06 (plan `2026-07-06-v4-slice-a-audit-backbone.md`, 13 tasks, commits through 7e936c9→smoke).
+Reason-code enum + per-run `run_report.json` (#1 ✅); EDL persisted per clip `clip_NNN_edl.json` (#2 ✅); loudness
+normalization to -14 LUFS + audio gate (#19 ✅); caption cue constraints `buildCaptionCues` (#22 ✅) + shared safe-area rect (#21 ✅ — rect defined + consumed by caption gate; crop-solver caption-avoidance #26 still Slice D);
+subject-in-frame gate (#25 ✅); unified audit module `src/quality/audit.ts` (#30 ✅ — ADVISORY in Slice A: records, does not block); golden decision test (#3 ✅) + EDL round-trip (#32 ✅, decision-identity);
+`DEPENDENCIES.md` ✅. New pkgs `src/report/` + `src/quality/` + `src/audio/loudness.ts`. Audit is advisory — flip to hard-gating in a later slice once gates are trustworthy. cut-integrity gate trivially-passes until Slice C's segments exist. → After A: no silent degradation, every clip carries a `quality` block + EDL, decision drift fails CI. 670 tests.
 
 **Slice B — Director quality** *(better selection = fewer wasted renders)*
 Visual-feasibility features filling the dead `visual_score` (#12); topic segmentation via the
