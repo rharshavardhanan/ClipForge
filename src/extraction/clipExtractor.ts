@@ -3,6 +3,7 @@ import { withRetry } from '../utils/retry.js';
 import { buildAudioFilter } from './audioProcessor.js';
 import { mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
+import type { KeepSegment } from '../editor/timeMap.js';
 
 export function buildVideoFilter(width: number, height: number): string {
   const isVertical = width / height <= 9 / 16 + 0.01;
@@ -50,4 +51,38 @@ export async function extractFullFrame(
   await mkdir(dirname(outPath), { recursive: true });
   const args = buildFullFrameExtractArgs(video, start, end - start, buildAudioFilter(), outPath);
   await withRetry(() => run('ffmpeg', args), { attempts: 3, label: 'ffmpeg-extract-fullframe' });
+}
+
+/**
+ * PURE: full-frame extract that CONCATENATES only the kept segments (clip-relative source
+ * times) in a single ffmpeg pass — the editor's internal cuts (v4 Slice C). `-ss clipStart`
+ * makes select's `t` clip-relative; `-t clipDur` bounds the decode to the clip window (never
+ * reads to EOF of a long source). No crop filter — the full source frame is preserved for
+ * the reframing stage, exactly like buildFullFrameExtractArgs.
+ */
+export function buildSegmentedExtractArgs(
+  video: string, clipStart: number, keep: KeepSegment[], af: string, outPath: string,
+): string[] {
+  const clipDur = keep.length ? Math.max(...keep.map((k) => k.end)) : 0;
+  const sel = keep.map((k) => `between(t,${k.start},${k.end})`).join('+');
+  return [
+    '-y', '-ss', String(clipStart), '-i', video, '-t', String(clipDur),
+    '-vf', `select='${sel}',setpts=N/FRAME_RATE/TB`,
+    '-af', `aselect='${sel}',asetpts=N/SR/TB,${af}`,
+    '-c:v', 'libx264', '-crf', '14', '-preset', 'medium', '-pix_fmt', 'yuv420p',
+    '-fps_mode', 'cfr', '-c:a', 'aac', '-b:a', '192k', outPath,
+  ];
+}
+
+/** Extract the clip keeping only `keep` (clip-relative). A single full [0,clipDur] span
+ *  delegates to the plain full-frame path (no filter overhead). */
+export async function extractTightened(
+  video: string, clipStart: number, clipDur: number, keep: KeepSegment[], outPath: string,
+): Promise<void> {
+  await mkdir(dirname(outPath), { recursive: true });
+  const identity = keep.length === 1 && keep[0].start === 0;
+  const args = identity
+    ? buildFullFrameExtractArgs(video, clipStart, clipDur, buildAudioFilter(), outPath)
+    : buildSegmentedExtractArgs(video, clipStart, keep, buildAudioFilter(), outPath);
+  await withRetry(() => run('ffmpeg', args), { attempts: 3, label: 'ffmpeg-extract-tightened' });
 }
