@@ -398,12 +398,16 @@ export async function detectFrameObs(
   srcH: number,
   fps = 3,
   maxSec?: number,
+  startSec?: number,
 ): Promise<FrameObs[]> {
   const dir = await mkdtemp(join(tmpdir(), 'clipforge-frameobs-'));
   try {
     await mkdir(dir, { recursive: true });
     await run('ffmpeg', [
-      '-y', '-i', videoPath,
+      '-y',
+      // -ss before -i is a fast (keyframe) seek — cheap windowed sampling (v4 Slice B).
+      ...(startSec !== undefined ? ['-ss', String(startSec)] : []),
+      '-i', videoPath,
       ...(maxSec !== undefined ? ['-t', String(maxSec)] : []),
       '-vf', `fps=${fps}`,
       join(dir, 'f_%04d.png'),
@@ -414,10 +418,11 @@ export async function detectFrameObs(
 
     const detector = await loadMultiFaceDetector();
     const frames: FrameObs[] = [];
+    const base = startSec ?? 0;
     for (let i = 0; i < files.length; i++) {
       const buf = await readFile(join(dir, files[i]));
       const faces = await detector.detectAllFacesWithLandmarks(buf);
-      frames.push({ time: i / fps, faces });
+      frames.push({ time: base + i / fps, faces });
     }
 
     return frames;

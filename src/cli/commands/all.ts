@@ -44,6 +44,10 @@ import { buildClipEdl, type ClipEdl } from '../../report/edl.js';
 import { buildRunReport, writeRunReport, type RunReportClip } from '../../report/runReport.js';
 import { ReasonCode } from '../../report/reasonCodes.js';
 import { normalizeLoudness, TARGET_LUFS } from '../../audio/loudness.js';
+import { detectFrameObs } from '../../extraction/faceTracker.js';
+import { scoreVisualFeasibility } from '../../director/visualFeasibility.js';
+import { selectDiverse, type Selectable } from '../../director/selectDiverse.js';
+import { topicOf } from '../../analysis/semantic.js';
 import { buildSeoPack, type SeoPack } from '../../export/seo.js';
 import { pickThumbnailTime, generateThumbnail } from '../../export/thumbnail.js';
 import { MODE_PROFILES, resolveMode, resolveFraming } from '../../modes.js';
@@ -160,6 +164,11 @@ async function pathSizeBytes(p: string): Promise<number> {
 /** PURE: coerce a preset name onto the legacy Remotion style prop (unknown → bold). */
 export function legacyStyle(preset: string): 'minimal' | 'card' | 'bold' {
   return preset === 'minimal' || preset === 'card' ? preset : 'bold';
+}
+
+/** PURE: map an arc survivor to the diversity selector's input (v4 Slice B). visual is 0-1. */
+export function survivorToSelectable(clip: RankedClip, sourceId: string, topic: string, visual: number): Selectable {
+  return { id: clip.clip_id, composite: clip.composite_score, visual, topic, sourceId };
 }
 
 /** PURE: reason codes gathered during render that the audit should surface as degradations. */
@@ -388,7 +397,7 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
   } else {
     const K = Math.max(opts.arcTopk ?? 8, opts.top);
     const topK = rankAcrossAnalyses(pool, { top: K, perVideoCap: opts.perVideoCap });
-    const survivors: { item: SourcedRankedClip; status: ArcStatus }[] = [];
+    const survivors: { item: SourcedRankedClip; status: ArcStatus; visual: number }[] = [];
     const spArc = ora(`Arc completion + 6/6 gate (${topK.length} candidates)…`).start();
     for (const item of topK) {
       const { clip, source } = item;
@@ -405,6 +414,14 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
         keyframeTimes(window, peakTime(rmsCurve, window), peakTime(motion, window)),
         join(WS, 'analysis', source.jobId, 'keyframes'),
       ).catch(() => []);
+      // Visual feasibility (v4 Slice B) — a cheap windowed face sample (~0.2fps, a handful of
+      // frames): a window with a clear on-screen subject frames cleanly; a faceless one is
+      // framing-hostile. Neutral 0.5 when sampling/detection fails (don't punish a failure).
+      const vfFrames = await detectFrameObs(
+        source.videoPath, source.meta.width, source.meta.height, 0.2, window.end - window.start, window.start,
+      ).catch(() => []);
+      const visual = vfFrames.length > 0 ? scoreVisualFeasibility(vfFrames, [], window.start, window.end).score : 0.5;
+
       const contextSegments = source.segments.filter((s) => s.end > window.start - 60 && s.start < window.end + 60);
       const completion = await completeArc({
         window, segments: contextSegments, evidence, images,
@@ -416,7 +433,7 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
         arcRejections.push(arcRejectionRow(clip, gate.missing, completion ? 'incomplete-arc' : 'arc-label-failed'));
         if (!opts.lenient) continue;
         const withLabel = completion ? applyCompletionToClip(clip, completion, window) : clip;
-        survivors.push({ item: { source, clip: withLabel }, status: { complete: false, missing: gate.missing } });
+        survivors.push({ item: { source, clip: withLabel }, status: { complete: false, missing: gate.missing }, visual });
         continue;
       }
       const used = opts.allowRepeats ? [] : await loadUsedRanges(source.jobId);
@@ -428,17 +445,22 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
         arcRejections.push(arcRejectionRow(clip, [], bounds.reject));
         if (!opts.lenient) continue;
         // Arc complete but the expansion collided with used ranges; keep the original bounds.
-        survivors.push({ item: { source, clip: applyCompletionToClip(clip, completion!, window) }, status: { complete: true, missing: [] } });
+        survivors.push({ item: { source, clip: applyCompletionToClip(clip, completion!, window) }, status: { complete: true, missing: [] }, visual });
         continue;
       }
-      survivors.push({ item: { source, clip: applyCompletionToClip(clip, completion!, bounds) }, status: { complete: true, missing: [] } });
+      survivors.push({ item: { source, clip: applyCompletionToClip(clip, completion!, bounds) }, status: { complete: true, missing: [] }, visual });
     }
     spArc.succeed(`arc gate: ${survivors.length}/${topK.length} passed${arcRejections.length ? ` (${arcRejections.length} rejected)` : ''}`);
-    survivors.sort((a, b) => b.item.clip.composite_score - a.item.clip.composite_score);
-    const kept = survivors.slice(0, opts.top);
-    selected = kept.map(({ item }, i) => ({
+    // v4 Slice B: pick the final set by composite + visual feasibility − topic redundancy
+    // (not pure composite), so framing-hostile moments drop and the pack shows topic range.
+    const selectables = survivors.map((s) => survivorToSelectable(
+      s.item.clip, s.item.source.jobId, topicOf(s.item.clip.start, s.item.clip.end, s.item.source.semantic), s.visual,
+    ));
+    const byId = new Map(survivors.map((s) => [s.item.clip.clip_id, s]));
+    const kept = selectDiverse(selectables, opts.top).map((w) => byId.get(w.id)!);
+    selected = kept.map(({ item, visual }, i) => ({
       source: item.source,
-      clip: { ...item.clip, rank: i + 1, clip_id: `clip_${String(i + 1).padStart(3, '0')}` },
+      clip: { ...item.clip, rank: i + 1, clip_id: `clip_${String(i + 1).padStart(3, '0')}`, visual_score: +(visual * 10).toFixed(2) },
     }));
     kept.forEach((s, i) => arcStatus.set(`clip_${String(i + 1).padStart(3, '0')}`, s.status));
     if (arcRejections.length > 0) {

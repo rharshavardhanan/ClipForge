@@ -222,3 +222,19 @@ describe('rank with arcs', () => {
     expect(r[0].composite_score).toBeCloseTo(4.5);
   });
 });
+
+describe('filler penalty (v4 Slice B)', () => {
+  it('a filler-dense candidate ranks below an equal-composite clean one', () => {
+    const fillerSegs: TranscriptSegment[] = [
+      { id: 0, start: 0, end: 30, text: 'um so like you know basically i mean uh', words: [] },
+      { id: 1, start: 30, end: 60, text: 'discipline is the bridge between goals and accomplishment', words: [] },
+    ];
+    const cands: ClipCandidate[] = [
+      { start: 0, end: 30, composite: 7, triggerScore: 5, audioScore: 5 },   // filler-heavy
+      { start: 30, end: 60, composite: 7, triggerScore: 5, audioScore: 5 },  // clean
+    ];
+    const r = rank(cands, fillerSegs, { top: 2, minScore: 0 });
+    expect(r[0].transcript_excerpt).toContain('discipline');   // clean clip wins the tie
+    expect(r[1].transcript_excerpt).toContain('um');
+  });
+});

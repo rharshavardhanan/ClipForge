@@ -84,7 +84,8 @@ design + prioritized plan happens after all parts are in.
 
 | Part 2 concept | Existing equivalent |
 |---|---|
-| Story arc requirement (hook/development/payoff) | Arc engine is STRICTER: 6/6 gate (hook/setup/tension/climax/payoff/reaction), `gateArc` hard gate, `--lenient` = the spec's flagged-fragment path |
+|
+
 | `DIRECTOR_NO_ARC_FOUND` handling | Arc rejection table (`arcRejectionRow`, printed per run) + `arc.complete=false` labeling under `--lenient` |
 | Transparent weighted feature scoring, stored vector | Composite score over interpretable layers; `layer_scores` in clip.json; AVSS/Channel-Intelligence RL tunes weights/arms, never replaces features — same philosophy as §4 |
 | `self_containedness` | Semantic layer's `is_standalone` flag (LLM-judged) |
