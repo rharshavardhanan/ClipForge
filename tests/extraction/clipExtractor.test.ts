@@ -51,3 +51,27 @@ describe('extractRaw (integration)', () => {
     expect(p.height).toBe(1920);
   }, 60_000);
 });
+
+describe('segmented (tightened) extraction (v4 Slice C)', () => {
+  it('buildSegmentedExtractArgs concatenates kept segments via select/aselect', async () => {
+    const { buildSegmentedExtractArgs } = await import('../../src/extraction/clipExtractor.js');
+    const args = buildSegmentedExtractArgs('src.mp4', 12, [{ start: 0, end: 5 }, { start: 8, end: 12 }], buildAudioFilter(), 'out.mp4');
+    const s = args.join(' ');
+    expect(s).toContain('-ss 12');                       // seek to clip start
+    expect(s).toContain('-t 12');                        // bound the read to the clip window
+    expect(s).toContain("between(t,0,5)+between(t,8,12)");
+    expect(s).toContain('setpts=N/FRAME_RATE/TB');
+    expect(s).toContain('asetpts=N/SR/TB');
+    expect(s).toContain('loudnorm');                      // existing audio filter preserved
+  });
+
+  it('extractTightened arg choice: identity keep uses the plain full-frame path', async () => {
+    const { buildSegmentedExtractArgs, buildFullFrameExtractArgs } = await import('../../src/extraction/clipExtractor.js');
+    // a real (multi-segment) keep uses select; the caller (extractTightened) delegates identity
+    // to buildFullFrameExtractArgs, which has no select filter
+    const plain = buildFullFrameExtractArgs('src.mp4', 12, 30, buildAudioFilter(), 'out.mp4').join(' ');
+    expect(plain).not.toContain('select');
+    const seg = buildSegmentedExtractArgs('src.mp4', 12, [{ start: 0, end: 5 }, { start: 8, end: 30 }], buildAudioFilter(), 'out.mp4').join(' ');
+    expect(seg).toContain('select');
+  });
+});
