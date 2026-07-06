@@ -424,3 +424,21 @@ describe('forced full-screen crop (--framing crop)', () => {
     expect(k.cropH).toBeLessThanOrEqual(SRC_H * 0.25);
   });
 });
+
+describe('Camera v2 hold-then-glide (v4 Slice D)', () => {
+  it('smoothTrack holds cx flat on a static face, then glides (bounded) to a jump', () => {
+    const still = { x: 400, y: 300, w: 200, h: 220 };
+    const moved = { x: 1300, y: 300, w: 200, h: 220 };
+    const samples: FaceSample[] = [];
+    for (let t = 0; t < 4; t += 0.33) samples.push({ time: t, box: still });   // ~1.3s still
+    for (let t = 4; t < 8; t += 0.33) samples.push({ time: t, box: moved });   // then jump
+    const track = smoothTrack(samples, SRC_W, SRC_H);
+    // during the still period the crop cx barely moves (held)
+    const stillCx = track.filter((_, i) => i < 8).map((k) => k.cx);
+    expect(Math.max(...stillCx) - Math.min(...stillCx)).toBeLessThan(SRC_W * 0.06);
+    // and successive cx steps never exceed the max camera velocity
+    for (let i = 1; i < track.length; i++) {
+      expect(Math.abs(track[i].cx - track[i - 1].cx)).toBeLessThanOrEqual(SRC_W * 0.11 + 1);
+    }
+  });
+});
