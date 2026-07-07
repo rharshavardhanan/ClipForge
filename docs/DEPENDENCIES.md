@@ -23,10 +23,23 @@ degrades to off, pipeline unchanged.
 | Python 3.10+ | perception runtime | PSF | user-installed (`brew install python@3.12`) |
 | jsonschema | validate the semantic timeline against the JSON-schema source of truth | MIT | only runtime dep in Phase 1a |
 | ffmpeg/ffprobe | mock producer heuristics (silencedetect, scene cuts) | LGPL/GPL | already required by ClipForge |
-| pyannote.audio (Phase 1b) | speaker diarization | MIT (code); models need a free **HF_TOKEN** | not installed in 1a |
-| YAMNet / CLIP (Phases 1c/1d) | audio events / scene embeddings | Apache-2.0 / MIT | not installed in 1a |
 
 Setup: `./start.sh perception-setup`.
+
+### `[real]` extra — perception venv only (never in Node's package.json)
+
+Installed by `./start.sh perception-setup` via `.[dev,real]`; pulled in only for the real
+producers (Phases 1b-1d), fully isolated from the Node/npm dependency tree.
+
+| Component | Purpose | License | Notes |
+|-----------|---------|---------|-------|
+| pyannote.audio | speaker diarization (Phase 1b, `speakers` layer) | MIT (code); models need a free **HF_TOKEN** | see `perception/README.md` for the token steps |
+| torch | tensor runtime for pyannote.audio and open-clip-torch | BSD-3-Clause | CPU/MPS on Mac, no CUDA |
+| tensorflow | runtime for YAMNet (Phase 1c, `audio_events` layer) | Apache-2.0 | |
+| tensorflow-hub | loads the pretrained YAMNet model from TF Hub | Apache-2.0 | |
+| numpy | array plumbing shared by the pyannote/yamnet/clip producers | BSD-3-Clause | |
+| open-clip-torch | zero-shot scene labels + embeddings (Phase 1d, `scenes` layer) | MIT | |
+| pillow | frame decode/resize for the CLIP producer | HPND (PIL license) | |
 
 ## Node runtime dependencies (key)
 
@@ -56,11 +69,13 @@ Setup: `./start.sh perception-setup`.
 The v4 spec's integration matrix names GPU-class Python models. ClipForge is Node-native and
 Mac-first (no CUDA), so these are **deferred or substituted**, not dependencies:
 
-- **WhisperX / PyAnnote (diarization)** → deferred; json3/whisper-cpp give word timings today.
-  Diarization candidate if pursued: sherpa-onnx / tinydiarize (ONNX, Mac-viable) — Slice F.
+- **WhisperX** → deferred; json3/whisper-cpp give word timings today. PyAnnote diarization is no
+  longer deferred — it's adopted as the optional `perception/` microservice's real producer
+  (Phase 1b, see the `[real]` extra table above), isolated in its own venv, never a Node dependency.
 - **YOLO11 / ByteTrack / SAM2** → not adopted; face-api covers talking-head framing. General
   object detection / mask segmentation has low marginal value for this content and no
   Mac-fast Node path.
 - **sentence-transformers embedder** → not adopted; the LLM semantic pass covers topic/novelty.
-- **librosa / Silero VAD / YAMNet** (laughter/applause) → deferred; RMS + trigger phrases are
-  the current proxy. ONNX audio classifier is the Slice F candidate.
+- **librosa / Silero VAD** (laughter/applause) → deferred; RMS + trigger phrases remain the
+  fallback proxy when the perception service isn't set up. YAMNet is no longer deferred — it's
+  adopted as the perception service's real producer (Phase 1c, see the `[real]` extra table above).
