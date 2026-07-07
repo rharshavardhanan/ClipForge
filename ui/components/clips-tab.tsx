@@ -16,6 +16,8 @@ interface Channel { id: string; title: string; }
 interface PublishState {
   job: string; clip: string; title: string; description: string; privacy: string;
   channels: Channel[]; channel: string;
+  /** Clip lives in the below_retention/ tier — uploadable, but with a visible quality warning. */
+  below: boolean; retentionPct?: number;
   busy: boolean; result?: string; error?: string;
 }
 
@@ -38,6 +40,8 @@ export function ClipsTab({ jobs, onRefresh }: { jobs: ExportJob[]; onRefresh: ()
     setPub({
       job: jobId, clip: c.clipId, privacy: 'public', busy: false,
       channels, channel: channels[0]?.id ?? '',
+      below: Boolean(c.belowRetentionFloor),
+      retentionPct: typeof c.predictedRetention === 'number' ? Math.round(c.predictedRetention * 100) : undefined,
       title: seo.title ?? c.title ?? c.clipId, description: seo.description ?? '',
     });
   }
@@ -55,7 +59,7 @@ export function ClipsTab({ jobs, onRefresh }: { jobs: ExportJob[]; onRefresh: ()
     try {
       const r = await fetch('/api/publish', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ job: pub.job, clip: pub.clip, title: pub.title, description: pub.description, privacy: pub.privacy, channel: pub.channel }),
+        body: JSON.stringify({ job: pub.job, clip: pub.clip, title: pub.title, description: pub.description, privacy: pub.privacy, channel: pub.channel, below: pub.below }),
       });
       const j = await r.json();
       if (j.ok) {
@@ -140,7 +144,7 @@ export function ClipsTab({ jobs, onRefresh }: { jobs: ExportJob[]; onRefresh: ()
                       <a className="font-medium text-zinc-400 hover:text-gold" href={`/api/video?job=${job.id}&file=${c.files.json}`} target="_blank">.json</a>
                       <a className="font-medium text-zinc-400 hover:text-gold" href={`/api/video?job=${job.id}&file=${c.files.raw}`} download>raw</a>
                       {c.belowRetentionFloor ? (
-                        <span className="text-zinc-600" title="Below the retention floor — the CLI upload command only reads the top exports tier. Re-run with a lower --min-retention to promote it, or upload manually.">▶ YouTube (n/a)</span>
+                        <button className="font-semibold text-amber-400/90 hover:text-amber-300" title="Below the retention floor — uploads from the below_retention/ tier with a quality warning." onClick={() => openPublish(job.id, c)}>▶ YouTube ⚠</button>
                       ) : (
                         <button className="font-semibold text-zinc-300 hover:text-gold" onClick={() => openPublish(job.id, c)}>▶ YouTube</button>
                       )}
@@ -174,6 +178,12 @@ export function ClipsTab({ jobs, onRefresh }: { jobs: ExportJob[]; onRefresh: ()
           <div className="w-full max-w-lg" onClick={(e) => e.stopPropagation()}>
             <Card className="flex flex-col gap-4">
               <p className="font-display text-base font-semibold text-zinc-100">Upload {pub.clip} to YouTube</p>
+              {pub.below && (
+                <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3.5 py-2.5 text-sm text-amber-200">
+                  ⚠ Quality gate: this clip predicted {pub.retentionPct != null ? `~${pub.retentionPct}%` : 'low'} retention
+                  (below your floor). It will upload fine — it&apos;s just less likely to perform.
+                </p>
+              )}
               <Field label="Title" hint={`${pub.title.length}/100`}>
                 <input className={inputCls} value={pub.title} maxLength={100}
                   onChange={(e) => setPub({ ...pub, title: e.target.value })} />

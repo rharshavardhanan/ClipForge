@@ -19,7 +19,12 @@ export async function POST(req: NextRequest) {
   if (!job || !clip) return NextResponse.json({ error: 'invalid job/clip' }, { status: 400 });
   const privacy = ['public', 'unlisted', 'private'].includes(b.privacy) ? b.privacy : 'public';
 
-  const args = ['dist/cli/index.js', 'upload', join(WORKSPACE_DIR, 'exports', job),
+  // below_retention/ is a self-contained tier (own clips_manifest.json + clip files) and the
+  // upload CLI is directory-based — pointing it at the subfolder uploads sub-floor clips too.
+  const dir = b.below === true
+    ? join(WORKSPACE_DIR, 'exports', job, 'below_retention')
+    : join(WORKSPACE_DIR, 'exports', job);
+  const args = ['dist/cli/index.js', 'upload', dir,
     '--clips', clip, '--privacy', privacy, '--json', '--force'];
   if (typeof b.channel === 'string' && b.channel.trim()) args.push('--channel', b.channel.trim());
   if (typeof b.title === 'string' && b.title.trim()) args.push('--title', b.title.trim());
