@@ -16,6 +16,9 @@ export enum ReasonCode {
   QUALITY_SUBJECT_OUT_OF_FRAME = 'QUALITY_SUBJECT_OUT_OF_FRAME',
   MODEL_UNAVAILABLE_STEPDOWN = 'MODEL_UNAVAILABLE_STEPDOWN',
   GPU_OOM_STEPDOWN = 'GPU_OOM_STEPDOWN',
+  // SP1 perception (hybrid perception architecture, 2026-07-06 design)
+  PERCEPTION_UNAVAILABLE = 'PERCEPTION_UNAVAILABLE',       // no venv/CLI, timeout, or invalid output
+  PERCEPTION_PRODUCER_FAILED = 'PERCEPTION_PRODUCER_FAILED', // a producer errored; its layer omitted
   // ClipForge additions (namespaced CF_ — not in the spec's enum, documented here)
   CF_AUDIO_LOUDNESS_ADJUSTED = 'CF_AUDIO_LOUDNESS_ADJUSTED',
   CF_BELOW_RETENTION_FLOOR = 'CF_BELOW_RETENTION_FLOOR',
