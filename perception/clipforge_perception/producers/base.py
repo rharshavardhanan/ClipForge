@@ -9,6 +9,8 @@ from typing import Protocol
 @dataclass
 class Ctx:
     duration: float
+    # Reserved for future frame-sampling producers (object/depth/VLM layers). MockProducer only
+    # reads ctx.duration; sample_fps is plumbed through now so the Producer contract is stable.
     sample_fps: float
 
 

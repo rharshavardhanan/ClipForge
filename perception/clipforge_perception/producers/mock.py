@@ -17,10 +17,22 @@ class MockProducer:
 
     def run(self, video: str, ctx: Ctx) -> dict:
         duration = ctx.duration
-        silences = ffmpeg.silence_spans(video)
-        speech = ffmpeg.speech_spans_from_silence(duration, silences)
 
-        speaker = Speaker(id="S0", turns=[Span(start=s, end=e) for s, e in speech])
+        # Audio layers must be DERIVED from a real audio stream — never fabricated. A video with
+        # no audio yields no speech regions to complement, so we emit empty speaker/event layers
+        # rather than inventing a whole-clip "speech" turn for a silent (audio-less) clip.
+        if ffmpeg.has_audio_stream(video):
+            silences = ffmpeg.silence_spans(video)
+            speech = ffmpeg.speech_spans_from_silence(duration, silences)
+        else:
+            speech = []
+
+        # Only emit a speaker when there is at least one derived turn (no zero-turn placeholder).
+        speakers = (
+            [speaker_to_dict(Speaker(id="S0", turns=[Span(start=s, end=e) for s, e in speech]))]
+            if speech
+            else []
+        )
         events = [AudioEvent(start=s, end=e, kind="speech", score=1.0) for s, e in speech]
 
         cuts = [t for t in ffmpeg.scene_cut_times(video) if 0.0 < t < duration]
@@ -34,7 +46,7 @@ class MockProducer:
             scenes = [Scene(start=0.0, end=round(duration, 3), label="scene 1")]
 
         return {
-            "speakers": [speaker_to_dict(speaker)],
+            "speakers": speakers,
             "audio_events": [event_to_dict(e) for e in events],
             "scenes": [scene_to_dict(s) for s in scenes],
         }
