@@ -18,20 +18,30 @@ fail() { echo "✗ $*" >&2; exit 1; }
 # ---------- perception-setup (Python AI perception microservice) ----------
 # Isolated: its own venv under perception/.venv; Node touches it only via the CLI.
 if [ "${1:-}" = "perception-setup" ]; then
-  command -v python3 >/dev/null || fail "python3 not found — install Python 3.10+ (brew install python@3.12)"
-  command -v ffmpeg  >/dev/null || fail "ffmpeg not found — brew install ffmpeg"
+  command -v ffmpeg >/dev/null || fail "ffmpeg not found — brew install ffmpeg"
+  # TF/torch wheels lag the newest python — prefer 3.12 when present.
+  PY=python3; command -v python3.12 >/dev/null && PY=python3.12
+  command -v "$PY" >/dev/null || fail "python3 not found — install Python 3.10+ (brew install python@3.12)"
   if command -v uv >/dev/null; then
     say "Setting up perception service with uv (perception/.venv)…"
-    (cd perception && { [ -d .venv ] || uv venv .venv; } && uv pip install --python .venv/bin/python -e ".[dev]")
+    (cd perception && { [ -d .venv ] || uv venv --python "$PY" .venv; } && uv pip install --python .venv/bin/python -e ".[dev,real]")
   else
     say "Setting up perception service with venv+pip (perception/.venv)…"
-    [ -d perception/.venv ] || python3 -m venv perception/.venv
+    [ -d perception/.venv ] || "$PY" -m venv perception/.venv
     perception/.venv/bin/pip install --upgrade pip >/dev/null
-    perception/.venv/bin/pip install -e "perception[dev]"
+    perception/.venv/bin/pip install -e "perception[dev,real]"
   fi
+  # HF_TOKEN (free) unlocks pyannote diarization; yamnet/clip warm without it.
+  if [ -f .env ] && grep -qE '^HF_TOKEN=.+' .env; then
+    export "$(grep -E '^HF_TOKEN=.+' .env | head -1)"
+  else
+    echo "  ${dim}No HF_TOKEN in .env — pyannote diarization will be skipped. Get a free token at"
+    echo "  hf.co/settings/tokens and accept the terms at hf.co/pyannote/speaker-diarization-3.1"
+    echo "  and hf.co/pyannote/segmentation-3.0, then re-run ./start.sh perception-setup.${reset}"
+  fi
+  say "Pre-downloading models (first run only — this can take several minutes)…"
+  perception/.venv/bin/clipforge-perception warm || true
   say "Perception ready. Verify: perception/.venv/bin/clipforge-perception --help"
-  echo "  ${dim}Phase 1a = mock producer (ffmpeg only): no Hugging Face token or model download needed yet.${reset}"
-  echo "  ${dim}Later phases (pyannote diarization) will need a free HF_TOKEN in .env.${reset}"
   exit 0
 fi
 
