@@ -40,6 +40,7 @@ function addRenderOptions(cmd: Command): Command {
     .option('--max-broll <n>', 'max B-roll overlays per clip (default: mode-dependent)', (v) => parseInt(v, 10))
     .option('--no-zooms', 'disable punch zooms on emphasized moments')
     .option('--no-sfx', 'disable sound-design SFX (whoosh on zooms, impact under hook)')
+    .option('--no-perception', 'disable the Python perception pass (semantic timeline enrichment)')
     .option('--sfx-volume <v>', 'SFX one-shot level 0-1', (v) => parseFloat(v), 0.6)
     .option('--sfx-dir <p>', 'SFX library folder', process.env.SFX_DIR ?? './sfx')
     .option('--no-loudnorm', 'skip loudness normalization (ship source loudness)')
@@ -74,7 +75,7 @@ function renderOpts(o: any) {
     mode: o.mode, broll: o.broll, brollDir: o.brollDir, maxBroll: o.maxBroll,
     music: o.music, musicVolume: o.musicVolume, musicDir: o.musicDir, zooms: o.zooms,
     sfx: o.sfx, sfxVolume: o.sfxVolume, sfxDir: o.sfxDir,
-    loudnorm: o.loudnorm, targetLufs: o.targetLufs, tighten: o.tighten,
+    loudnorm: o.loudnorm, targetLufs: o.targetLufs, tighten: o.tighten, perception: o.perception,
     deleteSource: o.deleteSource, allowRepeats: o.allowRepeats,
     arcTopk: o.arcTopk, lenient: o.lenient,
     // CLI takes a percentage (75); the pipeline gates on a 0-1 fraction.
