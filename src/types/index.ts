@@ -1,3 +1,5 @@
+import type { SemanticTimeline } from '../perception/timeline.js';
+
 export interface TranscriptWord { start: number; end: number; word: string; probability: number; }
 export interface TranscriptSegment {
   id: number; start: number; end: number; text: string;
@@ -133,4 +135,6 @@ export interface VideoAnalysis {
   mode: ContentMode;
   /** Per-second motion curve (v7 arc engine) — absent when the LLM/arc layer is off. */
   motion?: { time: number; v: number }[];
+  /** SP1 perception: semantic timeline from the Python service, or null when off/unavailable. */
+  perception?: SemanticTimeline | null;
 }

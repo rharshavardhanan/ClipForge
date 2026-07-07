@@ -66,6 +66,8 @@ import type { ArcExport, AvssExport } from '../../export/exporter.js';
 import { acquireBroll } from '../../broll/acquire.js';
 import { filterCallouts } from '../../broll/planner.js';
 import { logger } from '../../utils/logger.js';
+import { resolvePerception } from '../../perception/perceptionClient.js';
+import { SubprocessPerceptionClient } from '../../perception/subprocessClient.js';
 import type { ArcLabel, AudioEnergyLayer, BrollSegment, RankedClip, TranscriptSegment, VideoAnalysis } from '../../types/index.js';
 import { resolveCaptionStyle, type CaptionOverrides, type CaptionStyle } from '../../captions/presets.js';
 
@@ -140,6 +142,8 @@ export interface AllOpts {
   targetLufs?: number;
   /** Editor tightening (remove dead air + safe filler). Default on; false = keep clips whole. */
   tighten?: boolean;
+  /** Perception pass (semantic timeline). Default on; --no-perception disables. */
+  perception?: boolean;
 }
 
 /** PURE: files/dirs to remove when --delete-source is set — the big source download and the
@@ -244,6 +248,12 @@ export async function analyzeVideo(url: string, opts: AllOpts): Promise<VideoAna
   });
   sp.succeed(`Transcript ready — ${segments.reduce((a, s) => a + s.words.length, 0)} words`);
 
+  // SP1: Python perception pass (semantic timeline). Enrichment only — fail-soft to null,
+  // pipeline unchanged when off or unavailable. Cached per source under workspace/perception/<jobId>.
+  const perception = await resolvePerception(
+    opts.perception !== false, dl.videoPath, jobId, new SubprocessPerceptionClient(),
+  );
+
   sp = ora('Analyzing (triggers + audio energy)…').start();
   const triggers = detectTriggers(segments);
   const audio = await analyzeAudio(dl.videoPath);
@@ -306,7 +316,7 @@ export async function analyzeVideo(url: string, opts: AllOpts): Promise<VideoAna
     logger.info(`arc templates: +${finalCandidates.length - arcCandidates.length} Q&A/reaction candidate(s)`);
   }
 
-  return { jobId, url, videoPath: dl.videoPath, meta, segments, triggers, audio, semantic, candidates: finalCandidates, mode: profile.name, motion };
+  return { jobId, url, videoPath: dl.videoPath, meta, segments, triggers, audio, semantic, candidates: finalCandidates, mode: profile.name, motion, perception };
 }
 
 /**
