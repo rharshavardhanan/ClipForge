@@ -10,6 +10,9 @@ dev = ["pytest>=7.0"]
 real = [
   "pyannote.audio>=3.1,<4",
   "torch>=2.1",
+  "tensorflow>=2.16",
+  "tensorflow-hub>=0.16",
+  "numpy>=1.26",
 ]
 
 [project.scripts]

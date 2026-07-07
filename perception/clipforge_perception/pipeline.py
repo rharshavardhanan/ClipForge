@@ -10,8 +10,10 @@ from . import ffmpeg, schema
 from .producers.base import Ctx
 from .producers.mock import MockProducer
 from .producers.pyannote_diar import PyannoteDiarizationProducer
+from .producers.yamnet_events import YamnetEventsProducer
 
-PRODUCERS = {"mock": MockProducer, "pyannote": PyannoteDiarizationProducer}
+PRODUCERS = {"mock": MockProducer, "pyannote": PyannoteDiarizationProducer,
+             "yamnet": YamnetEventsProducer}
 
 
 def _load_existing(out_path: Path, duration: float) -> dict | None:
