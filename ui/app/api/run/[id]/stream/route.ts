@@ -6,7 +6,21 @@ export const dynamic = 'force-dynamic';
 /** SSE stream of a run's log lines; closes when the run finishes. */
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   const run = getRun(params.id);
-  if (!run) return new Response('unknown run', { status: 404 });
+  // Unknown run (e.g. a persisted id reconnecting after the dev server restarted and lost the
+  // in-memory registry): emit an immediate `done` so the client clears its saved run id and
+  // returns to a runnable state, instead of a 404 that would leave the UI stuck on a dead run.
+  if (!run) {
+    const enc = new TextEncoder();
+    return new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(enc.encode('event: done\ndata: -1\n\n'));
+          controller.close();
+        },
+      }),
+      { headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive' } },
+    );
+  }
 
   // Hoisted so both start() and cancel() share them: the client can disconnect
   // (tab closed) before the run ends, which fires cancel() — the interval must stop
