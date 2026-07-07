@@ -76,3 +76,27 @@ def speech_spans_from_silence(duration: float, silences: list[tuple[float, float
     if cursor < duration:
         spans.append((cursor, duration))
     return [(round(s, 3), round(e, 3)) for s, e in spans if e - s > 0.05]
+
+
+def extract_wav_16k(video: str, out_wav: str) -> str:
+    """Extract a 16kHz mono s16 WAV (the input format PyAnnote and YAMNet share)."""
+    proc = subprocess.run(
+        ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", video,
+         "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", out_wav],
+        capture_output=True, text=True,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(f"ffmpeg wav extract failed ({proc.returncode}): {proc.stderr[-500:]}")
+    return out_wav
+
+
+def extract_frame(video: str, at_sec: float, out_jpg: str) -> str:
+    """Extract one JPEG frame at `at_sec` (input-seek: fast and accurate enough for scenes)."""
+    proc = subprocess.run(
+        ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+         "-ss", f"{at_sec:.3f}", "-i", video, "-frames:v", "1", "-q:v", "3", out_jpg],
+        capture_output=True, text=True,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(f"ffmpeg frame extract failed ({proc.returncode}): {proc.stderr[-500:]}")
+    return out_jpg
