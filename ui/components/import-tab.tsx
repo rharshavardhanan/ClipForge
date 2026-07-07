@@ -16,6 +16,8 @@ export function ImportTab({ style, onFinished }: { style: StyleConfig; onFinishe
   const [ranking, setRanking] = useState(false);
   const [deleteSource, setDeleteSource] = useState(false);
   const [runId, setRunId] = useState<string | null>(null);
+  /** Exit code once the run ends (0 ok, >0 CLI failure, -2 connection lost); null while in flight. */
+  const [runDone, setRunDone] = useState<number | null>(null);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState('');
   const [uploading, setUploading] = useState('');
@@ -67,6 +69,7 @@ export function ImportTab({ style, onFinished }: { style: StyleConfig; onFinishe
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error ?? 'failed to start');
+      setRunDone(null);
       setRunId(body.id);
       localStorage.setItem('cf:runId', body.id);
     } catch (e) {
@@ -76,7 +79,9 @@ export function ImportTab({ style, onFinished }: { style: StyleConfig; onFinishe
     }
   };
 
-  const canRun = inputs.length > 0 && !starting && !(runId !== null && !error);
+  // Block reruns only while a run is actually in flight — a finished/failed run must always
+  // release the button (a silent stream death used to leave it disabled forever).
+  const canRun = inputs.length > 0 && !starting && !(runId !== null && runDone === null && !error);
 
   return (
     <div className="flex flex-col gap-5">
@@ -177,7 +182,20 @@ export function ImportTab({ style, onFinished }: { style: StyleConfig; onFinishe
         </div>
 
         {error && <p className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 px-3.5 py-2.5 text-sm text-red-300">{error}</p>}
-        {runId && <RunLog runId={runId} onDone={() => { setRunId(null); localStorage.removeItem('cf:runId'); onFinished(); }} />}
+        {/* The log STAYS visible after the run ends — success or failure — so results and errors
+            are always readable. It is only replaced when a new run starts. Code -1 = a restored
+            id the server no longer knows (registry lost on restart): nothing to show, clear it. */}
+        {runId && (
+          <RunLog
+            runId={runId}
+            onDone={(code) => {
+              localStorage.removeItem('cf:runId');
+              if (code === -1) { setRunId(null); setRunDone(null); return; }
+              setRunDone(code);
+              onFinished();
+            }}
+          />
+        )}
       </Card>
     </div>
   );
