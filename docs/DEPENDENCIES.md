@@ -12,6 +12,22 @@ calls (Claude / Gemini) leave the machine.
 | yt-dlp | source + B-roll/RankRot download, metadata, comments, subtitles | Unlicense (public domain) | user-installed |
 | whisper-cpp | local transcript fallback for files without captions | MIT | optional |
 
+## Python perception service (`perception/`, optional)
+
+Isolated microservice (own venv `perception/.venv`), run once-per-source and cached. Node shells
+out to its `clipforge-perception` CLI; it never imports a Python model. Absent venv → perception
+degrades to off, pipeline unchanged.
+
+| Component | Purpose | License | Notes |
+|-----------|---------|---------|-------|
+| Python 3.10+ | perception runtime | PSF | user-installed (`brew install python@3.12`) |
+| jsonschema | validate the semantic timeline against the JSON-schema source of truth | MIT | only runtime dep in Phase 1a |
+| ffmpeg/ffprobe | mock producer heuristics (silencedetect, scene cuts) | LGPL/GPL | already required by ClipForge |
+| pyannote.audio (Phase 1b) | speaker diarization | MIT (code); models need a free **HF_TOKEN** | not installed in 1a |
+| YAMNet / CLIP (Phases 1c/1d) | audio events / scene embeddings | Apache-2.0 / MIT | not installed in 1a |
+
+Setup: `./start.sh perception-setup`.
+
 ## Node runtime dependencies (key)
 
 | Package | Purpose | License |

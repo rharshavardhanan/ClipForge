@@ -15,6 +15,26 @@ bold=$(tput bold 2>/dev/null || true); dim=$(tput dim 2>/dev/null || true); rese
 say()  { echo "${bold}▸${reset} $*"; }
 fail() { echo "✗ $*" >&2; exit 1; }
 
+# ---------- perception-setup (Python AI perception microservice) ----------
+# Isolated: its own venv under perception/.venv; Node touches it only via the CLI.
+if [ "${1:-}" = "perception-setup" ]; then
+  command -v python3 >/dev/null || fail "python3 not found — install Python 3.10+ (brew install python@3.12)"
+  command -v ffmpeg  >/dev/null || fail "ffmpeg not found — brew install ffmpeg"
+  if command -v uv >/dev/null; then
+    say "Setting up perception service with uv (perception/.venv)…"
+    (cd perception && { [ -d .venv ] || uv venv .venv; } && uv pip install --python .venv/bin/python -e ".[dev]")
+  else
+    say "Setting up perception service with venv+pip (perception/.venv)…"
+    [ -d perception/.venv ] || python3 -m venv perception/.venv
+    perception/.venv/bin/pip install --upgrade pip >/dev/null
+    perception/.venv/bin/pip install -e "perception[dev]"
+  fi
+  say "Perception ready. Verify: perception/.venv/bin/clipforge-perception --help"
+  echo "  ${dim}Phase 1a = mock producer (ffmpeg only): no Hugging Face token or model download needed yet.${reset}"
+  echo "  ${dim}Later phases (pyannote diarization) will need a free HF_TOKEN in .env.${reset}"
+  exit 0
+fi
+
 # ---------- 1. Required tools ----------
 command -v node    >/dev/null || fail "node not found — install Node 20+ (nvm install 24)"
 command -v npm     >/dev/null || fail "npm not found"
