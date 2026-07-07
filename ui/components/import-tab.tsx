@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button, Card, Field, SectionHead, Stepper, inputCls } from './ui';
 import { Icon } from './icons';
 import { RunLog } from './run-log';
@@ -20,6 +20,14 @@ export function ImportTab({ style, onFinished }: { style: StyleConfig; onFinishe
   const [error, setError] = useState('');
   const [uploading, setUploading] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // Reconnect to an in-flight run after a remount/refresh/HMR: the run keeps going server-side
+  // (the registry + process live on globalThis), so restore its id and RunLog re-attaches to the
+  // live SSE stream instead of the run view vanishing "as if you never clicked run".
+  useEffect(() => {
+    const saved = localStorage.getItem('cf:runId');
+    if (saved) setRunId(saved);
+  }, []);
 
   const inputs = inputsText.split('\n').map((l) => l.trim()).filter(Boolean);
 
@@ -60,6 +68,7 @@ export function ImportTab({ style, onFinished }: { style: StyleConfig; onFinishe
       const body = await res.json();
       if (!res.ok) throw new Error(body.error ?? 'failed to start');
       setRunId(body.id);
+      localStorage.setItem('cf:runId', body.id);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -168,7 +177,7 @@ export function ImportTab({ style, onFinished }: { style: StyleConfig; onFinishe
         </div>
 
         {error && <p className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 px-3.5 py-2.5 text-sm text-red-300">{error}</p>}
-        {runId && <RunLog runId={runId} onDone={() => { setRunId(null); onFinished(); }} />}
+        {runId && <RunLog runId={runId} onDone={() => { setRunId(null); localStorage.removeItem('cf:runId'); onFinished(); }} />}
       </Card>
     </div>
   );
