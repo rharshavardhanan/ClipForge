@@ -93,4 +93,53 @@ describe('SubprocessPerceptionClient', () => {
     expect(await client.analyze('/x/video.mp4', 'job5')).toBeNull();
     expect(reasons).toContain(ReasonCode.PERCEPTION_UNAVAILABLE);
   });
+
+  it('spawns only the missing producers when the cache is partial', async () => {
+    const dir = ws();
+    writeCache(dir, 'job6', { ...GOLDEN, producers_run: ['mock'] });
+    const calls: string[][] = [];
+    const run = vi.fn(async (_cmd, args: string[]) => {
+      calls.push(args);
+      const out = args[args.indexOf('--out') + 1];
+      writeFileSync(out, JSON.stringify({ ...GOLDEN, producers_run: ['mock', 'pyannote', 'yamnet', 'clip'] }));
+      return { stdout: '', stderr: '' };
+    });
+    const client = new SubprocessPerceptionClient({
+      workspaceDir: dir, run, cliPath: __filename, onReason,
+    });
+    const t = await client.analyze('/x/video.mp4', 'job6');
+    expect(t?.producers_run).toEqual(['mock', 'pyannote', 'yamnet', 'clip']);
+    const modelsArg = calls[0][calls[0].indexOf('--models') + 1];
+    expect(modelsArg).toBe('pyannote,yamnet,clip'); // mock already cached — not re-run
+  });
+
+  it('cache hit requires ALL requested models', async () => {
+    const dir = ws();
+    writeCache(dir, 'job7', { ...GOLDEN, producers_run: ['mock', 'pyannote', 'yamnet', 'clip'] });
+    const run = vi.fn(async () => { throw new Error('must not spawn'); });
+    const client = new SubprocessPerceptionClient({
+      workspaceDir: dir, run, onReason,
+    });
+    const t = await client.analyze('/x/video.mp4', 'job7');
+    expect(t?.producers_run).toContain('clip');
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it('defaults to mock plus the three real producers (no cache → full default list)', async () => {
+    const dir = ws();
+    const calls: string[][] = [];
+    const run = vi.fn(async (_cmd, args: string[]) => {
+      calls.push(args);
+      const out = args[args.indexOf('--out') + 1];
+      mkdirSync(join(out, '..'), { recursive: true });
+      writeFileSync(out, JSON.stringify({ ...GOLDEN, producers_run: ['mock', 'pyannote', 'yamnet', 'clip'] }));
+      return { stdout: '', stderr: '' };
+    });
+    const client = new SubprocessPerceptionClient({
+      workspaceDir: dir, run, cliPath: __filename, onReason,
+    });
+    await client.analyze('/x/video.mp4', 'job8');
+    const modelsArg = calls[0][calls[0].indexOf('--models') + 1];
+    expect(modelsArg).toBe('mock,pyannote,yamnet,clip');
+  });
 });
