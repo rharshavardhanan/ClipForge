@@ -49,9 +49,12 @@ export class SubprocessPerceptionClient implements PerceptionClient {
     }
 
     // Auto-off: no venv/CLI on disk → degrade silently, no spawn attempt.
+    // Debug-level (not warn): perception defaults on but the venv is absent until a user opts in
+    // via ./start.sh perception-setup, so this branch fires on every legacy run — it must stay
+    // silent by default (LOG_LEVEL=info) while still recording the reason code for the run report.
     if (!existsSync(this.cliPath)) {
       return this.fail(jobId, ReasonCode.PERCEPTION_UNAVAILABLE,
-        `perception CLI not found at ${this.cliPath} — run ./start.sh perception-setup`);
+        `perception CLI not found at ${this.cliPath} — run ./start.sh perception-setup`, 'debug');
     }
 
     try {
@@ -89,8 +92,8 @@ export class SubprocessPerceptionClient implements PerceptionClient {
     }
   }
 
-  private fail(jobId: string, code: ReasonCode, msg: string): null {
-    logger.warn(`[${jobId}] ${code}: ${msg}`);
+  private fail(jobId: string, code: ReasonCode, msg: string, level: 'warn' | 'debug' = 'warn'): null {
+    logger[level](`[${jobId}] ${code}: ${msg}`);
     this.onReason?.(code);
     return null;
   }
