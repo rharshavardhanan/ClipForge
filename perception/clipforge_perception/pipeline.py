@@ -9,8 +9,9 @@ from pathlib import Path
 from . import ffmpeg, schema
 from .producers.base import Ctx
 from .producers.mock import MockProducer
+from .producers.pyannote_diar import PyannoteDiarizationProducer
 
-PRODUCERS = {"mock": MockProducer}
+PRODUCERS = {"mock": MockProducer, "pyannote": PyannoteDiarizationProducer}
 
 
 def _load_existing(out_path: Path, duration: float) -> dict | None:
