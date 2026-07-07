@@ -314,7 +314,9 @@ export async function analyzeVideo(url: string, opts: AllOpts): Promise<VideoAna
   // v4 Slice E: pure arc-template candidates (Q&A exchanges, reaction/punchline anchors) the
   // sliding window misses. Merged into the pool (dedup vs window/arc); flow through the same
   // rank → 6/6 gate → select → tighten → render path. Works with the LLM off (no cost).
-  const templates = generateArcTemplateCandidates(segments, triggers, audio, profile.lengths, meta.duration);
+  const templates = generateArcTemplateCandidates(
+    segments, triggers, audio, profile.lengths, meta.duration, perception?.audio_events ?? [],
+  );
   const finalCandidates = mergeTemplateCandidates(arcCandidates, templates);
   if (finalCandidates.length > arcCandidates.length) {
     logger.info(`arc templates: +${finalCandidates.length - arcCandidates.length} Q&A/reaction candidate(s)`);

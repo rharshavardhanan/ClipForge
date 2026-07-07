@@ -1,18 +1,26 @@
 /**
  * Arc-template candidate detectors (v4 Part 2 §3.2) — pure heuristics that surface clip
  * candidates the 30s sliding window misses because they're anchored to narrative structure,
- * not a grid: Q&A exchanges (question → answer) and reaction/punchline moments (a strong
- * trigger with setup before + tail after). Emitted candidates merge into the pool and flow
- * through the unchanged rank → 6/6 arc gate → select → tighten → render path; the gate still
- * decides whether each is a real story. No LLM — works even with the semantic layer off.
+ * not a grid: Q&A exchanges (question → answer), reaction/punchline moments (a strong trigger
+ * with setup before + tail after), and real audience reactions (laughter/applause/cheer from
+ * the perception audio layer, same setup+tail shape — SP1 1c). Emitted candidates merge into
+ * the pool and flow through the unchanged rank → 6/6 arc gate → select → tighten → render path;
+ * the gate still decides whether each is a real story. No LLM — works even with the semantic
+ * layer off (audience detector no-ops on an empty event list).
  */
 import type { AudioEnergyLayer, ClipCandidate, TranscriptSegment, TriggerHit } from '../types/index.js';
 import type { ClipLengths } from '../modes.js';
 import { overlapFraction } from '../analysis/arcMiner.js';
+import type { AudioEvent } from '../perception/timeline.js';
 
 export const TEMPLATE_QA_BONUS = 1.0;
 export const TEMPLATE_REACTION_BONUS = 1.5;
+export const TEMPLATE_AUDIENCE_BONUS = 1.5;
+export const AUDIENCE_SCORE_MIN = 0.5;
+export const AUDIENCE_MAX_CANDIDATES = 12;
 export const TEMPLATE_MERGE_OVERLAP = 0.5;
+
+const AUDIENCE_KINDS = new Set<AudioEvent['kind']>(['laughter', 'applause', 'cheer']);
 
 const INTERROGATIVE = /^(what|why|how|when|where|who|which|is|are|do|does|did|can|could|would|should|will|has|have)$/i;
 
@@ -79,13 +87,37 @@ export function detectReactionCandidates(
   return out;
 }
 
-/** PURE: both templates combined. */
+/** PURE: real audience reactions (laughter/applause/cheer from perception) anchor
+ *  reaction candidates the transcript can't see — setup before + tail after, exactly the
+ *  Tier-1 trigger shape. Strongest events win; capped so laugh-track footage can't spam. */
+export function detectAudienceReactionCandidates(
+  events: AudioEvent[], triggers: TriggerHit[], audio: AudioEnergyLayer, lengths: ClipLengths, duration: number,
+): ClipCandidate[] {
+  const anchors = events
+    .filter((e) => AUDIENCE_KINDS.has(e.kind) && e.score >= AUDIENCE_SCORE_MIN)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, AUDIENCE_MAX_CANDIDATES);
+  const out: ClipCandidate[] = [];
+  for (const e of anchors) {
+    const start = Math.max(0, e.start - lengths.soft * 0.6);
+    const end = Math.min(duration, e.start + lengths.soft * 0.4);
+    const span = clampSpan(start, end, lengths, duration);
+    if (span.end - span.start < lengths.min) continue;
+    const sc = spanComposite(span.start, span.end, triggers, audio, TEMPLATE_AUDIENCE_BONUS);
+    out.push({ start: span.start, end: span.end, ...sc });
+  }
+  return out;
+}
+
+/** PURE: all templates combined (Q&A, Tier-1 trigger reactions, real audience reactions). */
 export function generateArcTemplateCandidates(
-  segments: TranscriptSegment[], triggers: TriggerHit[], audio: AudioEnergyLayer, lengths: ClipLengths, duration: number,
+  segments: TranscriptSegment[], triggers: TriggerHit[], audio: AudioEnergyLayer,
+  lengths: ClipLengths, duration: number, audioEvents: AudioEvent[] = [],
 ): ClipCandidate[] {
   return [
     ...detectQaCandidates(segments, triggers, audio, lengths, duration),
     ...detectReactionCandidates(segments, triggers, audio, lengths, duration),
+    ...detectAudienceReactionCandidates(audioEvents, triggers, audio, lengths, duration),
   ];
 }
 

@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import {
-  isQuestion, spanComposite, detectQaCandidates, detectReactionCandidates, generateArcTemplateCandidates,
-  TEMPLATE_QA_BONUS, mergeTemplateCandidates,
+  isQuestion, spanComposite, detectQaCandidates, detectReactionCandidates, detectAudienceReactionCandidates,
+  generateArcTemplateCandidates, TEMPLATE_QA_BONUS, mergeTemplateCandidates,
 } from '../../src/director/arcTemplates.js';
 import type { AudioEnergyLayer, TranscriptSegment, TriggerHit } from '../../src/types/index.js';
+import type { AudioEvent } from '../../src/perception/timeline.js';
 
 const lengths = { min: 15, soft: 30, max: 45 };
 const seg = (id: number, start: number, end: number, text: string): TranscriptSegment => ({ id, start, end, text, words: [] });
@@ -11,6 +12,7 @@ const audio: AudioEnergyLayer = {
   rms_curve: Array.from({ length: 120 }, (_, i) => ({ time: i, rms: 5 })),
   silence_regions: [],
 };
+const emptyAudio: AudioEnergyLayer = { rms_curve: [], silence_regions: [] };
 
 describe('isQuestion', () => {
   it('detects ? endings and interrogative openers', () => {
@@ -74,12 +76,48 @@ describe('detectReactionCandidates', () => {
   });
 });
 
+const LAUGH = (start: number, score = 0.8): AudioEvent =>
+  ({ start, end: start + 1.5, kind: 'laughter', score });
+
+describe('detectAudienceReactionCandidates', () => {
+  it('anchors a candidate on a strong laughter event (setup before, tail after)', () => {
+    const out = detectAudienceReactionCandidates([LAUGH(60)], [], emptyAudio, lengths, 300);
+    expect(out).toHaveLength(1);
+    // setup before the laugh: start = 60 - soft*0.6, end = 60 + soft*0.4 (then clamped)
+    expect(out[0].start).toBeCloseTo(Math.max(0, 60 - lengths.soft * 0.6), 1);
+    expect(out[0].end).toBeGreaterThan(60);
+  });
+
+  it('ignores weak (<0.5) and non-audience kinds', () => {
+    const events: AudioEvent[] = [
+      LAUGH(60, 0.3),
+      { start: 80, end: 81, kind: 'music', score: 0.9 },
+      { start: 100, end: 101, kind: 'speech', score: 1.0 },
+    ];
+    expect(detectAudienceReactionCandidates(events, [], emptyAudio, lengths, 300)).toHaveLength(0);
+  });
+
+  it('caps at the 12 strongest events', () => {
+    const events = Array.from({ length: 20 }, (_, i) => LAUGH(10 + i * 14, 0.5 + i * 0.02));
+    const out = detectAudienceReactionCandidates(events, [], emptyAudio, lengths, 400);
+    expect(out.length).toBeLessThanOrEqual(12);
+  });
+});
+
 describe('generateArcTemplateCandidates', () => {
   it('returns both templates combined', () => {
     const segments = [seg(0, 8, 11, 'How did you do it?'), seg(1, 13, 25, 'Hard work every day.')];
     const triggers: TriggerHit[] = [{ time: 40, weight: 5, phrase: 'insane', tier: 1 }];
     const c = generateArcTemplateCandidates(segments, triggers, audio, lengths, 900);
     expect(c.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('without events is unchanged (perception-off identity)', () => {
+    const segments = [seg(0, 8, 11, 'How did you do it?'), seg(1, 13, 25, 'Hard work every day.')];
+    const triggers: TriggerHit[] = [{ time: 40, weight: 5, phrase: 'insane', tier: 1 }];
+    const before = generateArcTemplateCandidates(segments, triggers, audio, lengths, 900);
+    const after = generateArcTemplateCandidates(segments, triggers, audio, lengths, 900, []);
+    expect(after).toEqual(before);
   });
 });
 
