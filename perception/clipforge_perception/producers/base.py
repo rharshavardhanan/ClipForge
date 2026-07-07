@@ -12,6 +12,9 @@ class Ctx:
     # Reserved for future frame-sampling producers (object/depth/VLM layers). MockProducer only
     # reads ctx.duration; sample_fps is plumbed through now so the Producer contract is stable.
     sample_fps: float
+    # Directory of the out JSON — producers that write sidecar files (CLIP embeddings) anchor
+    # relative refs like "clip/0.f32" here.
+    out_dir: str = "."
 
 
 class Producer(Protocol):
