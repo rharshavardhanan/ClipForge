@@ -12,7 +12,7 @@ export function mapWhisperJson(json: unknown): TranscriptSegment[] {
   const segs = (json as { transcription?: WSeg[] }).transcription ?? [];
   return segs.map((s, id) => {
     const words: TranscriptWord[] = (s.tokens ?? [])
-      .filter((t) => t.text.trim() && !t.text.startsWith('['))
+      .filter((t) => { const txt = t.text.trim(); return txt && !txt.startsWith('['); }) // drop specials like ' [_BEG_]'/' [_TT_n]'
       .map((t) => ({ start: t.offsets.from / 1000, end: t.offsets.to / 1000, word: t.text, probability: 1 }));
     return { id, start: s.offsets.from / 1000, end: s.offsets.to / 1000, text: s.text.trim(), words };
   });
@@ -40,7 +40,11 @@ export async function transcribe(videoPath: string, workdir: string): Promise<Tr
   await run('ffmpeg', ['-y', '-i', videoPath, '-ar', '16000', '-ac', '1', wav]);
   const model = await ensureModel(workdir);
   const outBase = join(workdir, 'whisper');
-  await run('whisper-cli', ['-m', model, '-f', wav, '-oj', '-of', outBase, '-ml', '1']);
+  // -ojf (full JSON), NOT -oj: only the full output includes per-segment `tokens` — plain -oj
+  // has no tokens at all, which mapWhisperJson turns into a 0-word transcript (live-debugged
+  // 2026-07-07). No -ml 1: it split segments into sub-word fragments; natural segments give
+  // phrase-level captions while tokens still carry the word timings.
+  await run('whisper-cli', ['-m', model, '-f', wav, '-ojf', '-of', outBase]);
   let json: unknown;
   try {
     json = JSON.parse(await readFile(`${outBase}.json`, 'utf8'));

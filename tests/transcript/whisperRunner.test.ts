@@ -33,4 +33,19 @@ describe('mapWhisperJson', () => {
     const segs = mapWhisperJson(noisy);
     expect(segs[0].words.map((w) => w.word.trim())).toEqual(['Stay', 'hard.']);
   });
+
+  it('filters special tokens even with leading whitespace (real -ojf output)', () => {
+    const noisy = {
+      transcription: [
+        { offsets: { from: 0, to: 1500 }, text: ' Stay hard.', tokens: [
+          { text: ' [_BEG_]', offsets: { from: 0, to: 0 } },
+          { text: ' Stay', offsets: { from: 0, to: 600 } },
+          { text: ' [_TT_42]', offsets: { from: 600, to: 600 } },
+          { text: ' hard.', offsets: { from: 600, to: 1500 } },
+        ]},
+      ],
+    };
+    const segs = mapWhisperJson(noisy);
+    expect(segs[0].words.map((w) => w.word.trim())).toEqual(['Stay', 'hard.']);
+  });
 });
