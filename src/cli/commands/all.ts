@@ -142,7 +142,8 @@ export interface AllOpts {
   targetLufs?: number;
   /** Editor tightening (remove dead air + safe filler). Default on; false = keep clips whole. */
   tighten?: boolean;
-  /** Perception pass (semantic timeline). Default on; --no-perception disables. */
+  /** Perception pass (semantic timeline). Opt-in / off by default: --perception or PERCEPTION=1.
+   *  Off means the pipeline behaves exactly as before — nothing consumes the timeline yet (Phase 1). */
   perception?: boolean;
 }
 
@@ -248,10 +249,13 @@ export async function analyzeVideo(url: string, opts: AllOpts): Promise<VideoAna
   });
   sp.succeed(`Transcript ready — ${segments.reduce((a, s) => a + s.words.length, 0)} words`);
 
-  // SP1: Python perception pass (semantic timeline). Enrichment only — fail-soft to null,
-  // pipeline unchanged when off or unavailable. Cached per source under workspace/perception/<jobId>.
+  // SP1: Python perception pass (semantic timeline). OPT-IN / off by default: it runs two full
+  // ffmpeg passes over the source and NOTHING consumes the timeline yet (Phase 1 only caches it),
+  // so it stays off the critical path unless explicitly enabled via --perception or PERCEPTION=1.
+  // Enrichment only — fail-soft to null; cached per source under workspace/perception/<jobId>.
+  const perceptionOn = opts.perception === true || process.env.PERCEPTION === '1';
   const perception = await resolvePerception(
-    opts.perception !== false, dl.videoPath, jobId, new SubprocessPerceptionClient(),
+    perceptionOn, dl.videoPath, jobId, new SubprocessPerceptionClient(),
   );
 
   sp = ora('Analyzing (triggers + audio energy)…').start();
