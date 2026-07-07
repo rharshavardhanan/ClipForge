@@ -8,12 +8,13 @@ from pathlib import Path
 
 from . import ffmpeg, schema
 from .producers.base import Ctx
+from .producers.clip_scenes import ClipScenesProducer
 from .producers.mock import MockProducer
 from .producers.pyannote_diar import PyannoteDiarizationProducer
 from .producers.yamnet_events import YamnetEventsProducer
 
 PRODUCERS = {"mock": MockProducer, "pyannote": PyannoteDiarizationProducer,
-             "yamnet": YamnetEventsProducer}
+             "yamnet": YamnetEventsProducer, "clip": ClipScenesProducer}
 
 
 def _load_existing(out_path: Path, duration: float) -> dict | None:
