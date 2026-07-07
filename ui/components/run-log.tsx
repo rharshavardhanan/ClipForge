@@ -45,14 +45,26 @@ export function RunLog({ runId, onDone }: { runId: string; onDone?: (code: numbe
     setLines([]);
     setDone(null);
     const es = new EventSource(`/api/run/${runId}/stream`);
+    let finished = false;
     es.onmessage = (e) => setLines((prev) => [...prev, JSON.parse(e.data)]);
     es.addEventListener('done', (e) => {
-      const code = Number((e as MessageEvent).data);
+      const raw = Number((e as MessageEvent).data);
+      const code = Number.isFinite(raw) ? raw : -2; // null exit (signal-killed) → connection-lost-style failure
+      finished = true;
       setDone(code);
       es.close();
       onDoneRef.current?.(code);
     });
-    es.onerror = () => es.close();
+    // A dead stream must surface as a failure, never a silent hang: if this fires before `done`
+    // (dev server restarted / crashed mid-run), report code -2 so the caller can re-enable its UI.
+    es.onerror = () => {
+      es.close();
+      if (finished) return;
+      finished = true;
+      setLines((prev) => [...prev, '⚠ connection to the server lost — the run may have been killed (was the dev server restarted?)']);
+      setDone(-2);
+      onDoneRef.current?.(-2);
+    };
     return () => es.close();
   }, [runId]);
 
@@ -63,7 +75,10 @@ export function RunLog({ runId, onDone }: { runId: string; onDone?: (code: numbe
   const running = done === null;
   const stage = useMemo(() => stageFor(lines), [lines]);
   const pct = running ? stage.pct : done === 0 ? 100 : stage.pct;
-  const label = running ? stage.label : done === 0 ? 'Done' : `Failed (exit ${done})`;
+  const label = running ? stage.label
+    : done === 0 ? 'Done'
+    : done === -2 ? 'Connection lost'
+    : `Failed (exit ${done})`;
   const labelColor = running ? 'text-gold' : done === 0 ? 'text-green-400' : 'text-red-400';
 
   return (
@@ -104,7 +119,7 @@ export function RunLog({ runId, onDone }: { runId: string; onDone?: (code: numbe
         {lines.map((l, i) => <div key={i}>{l}</div>)}
         {done !== null && (
           <div className={done === 0 ? 'text-green-400' : 'text-red-400'}>
-            {done === 0 ? 'Done.' : `Exited with code ${done}.`}
+            {done === 0 ? 'Done.' : done === -2 ? 'Connection lost.' : `Exited with code ${done}.`}
           </div>
         )}
       </div>
