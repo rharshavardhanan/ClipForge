@@ -63,6 +63,13 @@ yamnet and clip need no token and warm regardless.
 Everything here is **fail-soft**: no `HF_TOKEN` (or any other warm/analyze failure) just means the
 `speakers` layer stays mock/empty for that run — it never blocks setup or the pipeline.
 
+### Mac benchmarks (2026-07-08, Apple Silicon, CPU, warm models)
+
+Once-per-source cached pass on a 149s 1080p video: **yamnet 5s**, **clip 11s** (2 scenes),
+pyannote fail-fast <1s without a token (untimed with one — expect minutes on CPU for long
+videos; it's the slowest producer). Full 4-producer pass on a 19s clip: ~10s. `--models mock`
+alone: ~0.3s, imports no torch/tensorflow.
+
 ## Tests
 
 ```bash
