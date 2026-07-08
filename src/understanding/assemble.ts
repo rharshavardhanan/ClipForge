@@ -49,7 +49,7 @@ function mergeScenes(scenes: Omit<SceneNode, 'id'>[]): { merged: Omit<SceneNode,
       && s.span.start - prev.span.end <= SCENE_MERGE_MAX_GAP_SEC
       && prev.label.toLowerCase() === s.label.toLowerCase()
       && participantsCompatible(prev.participants, s.participants)
-      && s.span.end - prev.span.start <= SCENE_MERGE_MAX_SEC;
+      && Math.max(prev.span.end, s.span.end) - prev.span.start <= SCENE_MERGE_MAX_SEC;
     if (canMerge) {
       prev.span = { start: prev.span.start, end: Math.max(prev.span.end, s.span.end) };
       prev.importance = Math.max(prev.importance, s.importance);
