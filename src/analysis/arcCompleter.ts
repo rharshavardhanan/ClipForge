@@ -56,6 +56,7 @@ export function completionPrompt(opts: {
   hasImages: boolean;
   /** Mode envelope max — stated so the model finds arcs that FIT (longer arcs are rejected). */
   maxSec?: number;
+  understanding?: string;
 }): string {
   const transcript = opts.contextSegments
     .map((s) => `[${s.start.toFixed(1)}-${s.end.toFixed(1)}] ${s.text}`).join('\n');
@@ -73,6 +74,8 @@ export function completionPrompt(opts: {
       + '"payoff":{"start":30.0,"end":33.0},"reaction":{"start":33.0,"end":38.0}},'
       + '"bounds":{"start":18.0,"end":40.0}}',
     ...(opts.priorArc ? ['', `A previous pass suggested: ${JSON.stringify(opts.priorArc.components)}`] : []),
+    ...(opts.understanding && opts.understanding.trim() !== ''
+      ? ['', 'STORY CONTEXT (scene graph):', opts.understanding] : []),
     ...(opts.hasImages ? ['', 'Frames from the clip are attached in time order — use them to see silent/visual action.'] : []),
     '', 'TRANSCRIPT (context around the candidate):', transcript, '', 'SIGNAL EVIDENCE:', opts.evidence,
   ].join('\n');
@@ -145,6 +148,7 @@ export interface CompleteArcOpts {
   durationSec: number;
   /** Mode envelope max, stated in the prompt. */
   maxSec?: number;
+  understanding?: string;
   /** Test seam; default askVisionJson. */
   ask?: AskVisionFn;
 }
@@ -156,7 +160,7 @@ export async function completeArc(opts: CompleteArcOpts): Promise<ArcCompletion 
     prompt: completionPrompt({
       window: opts.window, contextSegments: opts.segments, evidence: opts.evidence,
       priorArc: opts.priorArc, mode: opts.mode, hasImages: opts.images.length > 0,
-      maxSec: opts.maxSec,
+      maxSec: opts.maxSec, understanding: opts.understanding,
     }),
     schema: ARC_COMPLETE_SCHEMA as unknown as Record<string, unknown>,
     label: `arc-complete ${opts.window.start.toFixed(0)}-${opts.window.end.toFixed(0)}`,
