@@ -68,7 +68,7 @@ import { filterCallouts } from '../../broll/planner.js';
 import { logger } from '../../utils/logger.js';
 import { resolvePerception } from '../../perception/perceptionClient.js';
 import { SubprocessPerceptionClient } from '../../perception/subprocessClient.js';
-import { clipReactionEvents } from '../../perception/query.js';
+import { clipReactionEvents, sceneTopicOf } from '../../perception/query.js';
 import type { ArcLabel, AudioEnergyLayer, BrollSegment, RankedClip, TranscriptSegment, VideoAnalysis } from '../../types/index.js';
 import { resolveCaptionStyle, type CaptionOverrides, type CaptionStyle } from '../../captions/presets.js';
 
@@ -503,7 +503,10 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
     // v4 Slice B: pick the final set by composite + visual feasibility − topic redundancy
     // (not pure composite), so framing-hostile moments drop and the pack shows topic range.
     const selectables = survivors.map((s) => survivorToSelectable(
-      s.item.clip, s.item.source.jobId, topicOf(s.item.clip.start, s.item.clip.end, s.item.source.semantic), s.visual,
+      s.item.clip, s.item.source.jobId,
+      topicOf(s.item.clip.start, s.item.clip.end, s.item.source.semantic)
+        || sceneTopicOf(s.item.clip.start, s.item.clip.end, s.item.source.perception?.scenes ?? []),
+      s.visual,
     ));
     const byId = new Map(survivors.map((s) => [s.item.clip.clip_id, s]));
     const kept = selectDiverse(selectables, opts.top).map((w) => byId.get(w.id)!);
@@ -526,7 +529,8 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
   // is "new" the first time it appears in the ordered selection; repeats aren't (diversity).
   const seenTopics = new Set<string>();
   for (const { clip, source } of selected) {
-    const topic = topicOf(clip.start, clip.end, source.semantic);
+    const topic = topicOf(clip.start, clip.end, source.semantic)
+      || sceneTopicOf(clip.start, clip.end, source.perception?.scenes ?? []);
     const isNew = topic !== '' && !seenTopics.has(topic);
     if (topic) seenTopics.add(topic);
     const visual = clip.visual_score / 10;
