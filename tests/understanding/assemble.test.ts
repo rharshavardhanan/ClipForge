@@ -45,6 +45,24 @@ describe('assembleUnderstanding', () => {
     expect(u.scenes).toHaveLength(3);
   });
 
+  it('does not merge when the union would exceed the 180s cap', () => {
+    const chunks: ChunkUnderstanding[] = [
+      { chunkKey: 'a', chunkSpan: { start: 0, end: 200 }, arcs: [],
+        scenes: [sc(0, 100, 'long'), sc(100.5, 190, 'long')], edges: [] },
+    ];
+    const u = assembleUnderstanding(chunks, { ...SIG, durationSec: 200 }, 'gemini');
+    expect(u.scenes).toHaveLength(2);
+  });
+
+  it('does not merge when participant overlap is below 50%', () => {
+    const chunks: ChunkUnderstanding[] = [
+      { chunkKey: 'a', chunkSpan: { start: 0, end: 300 }, arcs: [],
+        scenes: [sc(0, 100, 'same', 0.5, ['S0', 'S1']), sc(100, 200, 'same', 0.5, ['S2', 'S3'])], edges: [] },
+    ];
+    const u = assembleUnderstanding(chunks, { ...SIG, durationSec: 300 }, 'gemini');
+    expect(u.scenes).toHaveLength(2);
+  });
+
   it('importance: scene term dominates where anchored; renormalizes when useSceneTerm=false', () => {
     const chunks: ChunkUnderstanding[] = [
       { chunkKey: 'a', chunkSpan: { start: 0, end: 100 }, arcs: [], scenes: [sc(0, 50, 'hot', 1.0)], edges: [] },
