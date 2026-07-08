@@ -13,7 +13,7 @@ import type { ArcLabel, ArcSpan, ClipCandidate } from '../types/index.js';
 import type { ContentMode } from '../modes.js';
 import { logger } from '../utils/logger.js';
 
-const MODE_VOCAB: Record<ContentMode, string> = {
+export const MODE_VOCAB: Record<ContentMode, string> = {
   clippies: 'challenge setup, joke setup, fail setup, rage escalation, scream/reaction payoff. Never isolate a scream — the story is: sees challenge → tries → fails → reacts.',
   mindcuts: 'hook, explanation, escalation, insight/payoff. Never a quote without its story: the arc is struggle → turn → insight.',
 };
