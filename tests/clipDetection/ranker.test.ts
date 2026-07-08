@@ -238,3 +238,26 @@ describe('filler penalty (v4 Slice B)', () => {
     expect(r[1].transcript_excerpt).toContain('um');
   });
 });
+
+describe('importance boost (SP2)', () => {
+  it('importance boost is sort-only and identity when absent', () => {
+    const segs: TranscriptSegment[] = [
+      { id: 0, start: 0, end: 20, text: 'alpha bravo charlie', words: [] },
+      { id: 1, start: 100, end: 120, text: 'delta echo foxtrot', words: [] },
+    ];
+    const candidates: ClipCandidate[] = [
+      { start: 0, end: 20, composite: 5.0, triggerScore: 3, audioScore: 2 },
+      { start: 100, end: 120, composite: 5.2, triggerScore: 3, audioScore: 2 },
+    ];
+    const base = rank(candidates, segs, { top: 2 });
+    // hot curve over the FIRST (lower-composite) candidate flips the order
+    const curve = Array.from({ length: 21 }, (_, t) => ({ t, v: 1 }));
+    const boosted = rank(candidates, segs, { top: 2, importance: curve });
+    expect(base[0].start).toBe(100);
+    expect(boosted[0].start).toBe(0);
+    // composite reporting untouched by the boost
+    expect(boosted.find((c) => c.start === 0)!.composite_score).toBe(base.find((c) => c.start === 0)!.composite_score);
+    // identity: no curve / empty curve → identical result object
+    expect(rank(candidates, segs, { top: 2, importance: [] })).toEqual(base);
+  });
+});
