@@ -18,3 +18,11 @@ export async function resolvePerception(
   if (!enabled) return null;
   return client.analyze(videoPath, jobId);
 }
+
+/** SP2: perception is ON by default (understanding consumes it). PERCEPTION=0/1
+ *  overrides in either direction; otherwise only an explicit --no-perception disables. */
+export function perceptionEnabled(flag: boolean | undefined, env: NodeJS.ProcessEnv): boolean {
+  if (env.PERCEPTION === '0') return false;
+  if (env.PERCEPTION === '1') return true;
+  return flag !== false;
+}

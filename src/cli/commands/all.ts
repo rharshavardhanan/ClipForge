@@ -66,7 +66,7 @@ import type { ArcExport, AvssExport } from '../../export/exporter.js';
 import { acquireBroll } from '../../broll/acquire.js';
 import { filterCallouts } from '../../broll/planner.js';
 import { logger } from '../../utils/logger.js';
-import { resolvePerception } from '../../perception/perceptionClient.js';
+import { resolvePerception, perceptionEnabled } from '../../perception/perceptionClient.js';
 import { SubprocessPerceptionClient } from '../../perception/subprocessClient.js';
 import { clipReactionEvents, sceneTopicOf } from '../../perception/query.js';
 import type { ArcLabel, AudioEnergyLayer, BrollSegment, RankedClip, TranscriptSegment, VideoAnalysis } from '../../types/index.js';
@@ -143,8 +143,8 @@ export interface AllOpts {
   targetLufs?: number;
   /** Editor tightening (remove dead air + safe filler). Default on; false = keep clips whole. */
   tighten?: boolean;
-  /** Perception pass (semantic timeline). Opt-in / off by default: --perception or PERCEPTION=1.
-   *  Off means the pipeline behaves exactly as before — nothing consumes the timeline yet (Phase 1). */
+  /** Perception pass (semantic timeline). ON by default (SP2 understanding consumes it);
+   *  --no-perception or PERCEPTION=0 disables. */
   perception?: boolean;
 }
 
@@ -244,20 +244,21 @@ export async function analyzeVideo(url: string, opts: AllOpts): Promise<VideoAna
   const meta = await extractMetadata(dl.videoPath, dl.infoJsonPath, jobId, join(dirs.transcripts, 'metadata.json'));
   sp.succeed(`Downloaded: "${meta.title}" (${Math.round(meta.duration)}s)`);
 
+  // SP2: perception is ON by default and launched in the BACKGROUND — the understanding
+  // pass awaits it later, hidden behind transcript/semantic work (the Phase-1a lesson:
+  // never block the critical path with a silent multi-second ffmpeg pass).
+  const perceptionPromise = resolvePerception(
+    perceptionEnabled(opts.perception, process.env), dl.videoPath, jobId, new SubprocessPerceptionClient(),
+  );
+
   sp = ora('Extracting transcript…').start();
   const segments: TranscriptSegment[] = await getTranscript({
     jobId, videoPath: dl.videoPath, subtitlePath: dl.subtitlePath, outPath: join(dirs.transcripts, 'transcript.json'),
   });
   sp.succeed(`Transcript ready — ${segments.reduce((a, s) => a + s.words.length, 0)} words`);
 
-  // SP1: Python perception pass (semantic timeline). OPT-IN / off by default: it runs two full
-  // ffmpeg passes over the source and NOTHING consumes the timeline yet (Phase 1 only caches it),
-  // so it stays off the critical path unless explicitly enabled via --perception or PERCEPTION=1.
   // Enrichment only — fail-soft to null; cached per source under workspace/perception/<jobId>.
-  const perceptionOn = opts.perception === true || process.env.PERCEPTION === '1';
-  const perception = await resolvePerception(
-    perceptionOn, dl.videoPath, jobId, new SubprocessPerceptionClient(),
-  );
+  const perception = await perceptionPromise;
 
   sp = ora('Analyzing (triggers + audio energy)…').start();
   const triggers = detectTriggers(segments);
