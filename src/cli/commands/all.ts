@@ -68,6 +68,7 @@ import { filterCallouts } from '../../broll/planner.js';
 import { logger } from '../../utils/logger.js';
 import { resolvePerception } from '../../perception/perceptionClient.js';
 import { SubprocessPerceptionClient } from '../../perception/subprocessClient.js';
+import { clipReactionEvents } from '../../perception/query.js';
 import type { ArcLabel, AudioEnergyLayer, BrollSegment, RankedClip, TranscriptSegment, VideoAnalysis } from '../../types/index.js';
 import { resolveCaptionStyle, type CaptionOverrides, type CaptionStyle } from '../../captions/presets.js';
 
@@ -633,7 +634,10 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
         zoomsEnabled: opts.zooms !== false, sfxEnabled: sfxAvailable,
         sfxVolume: opts.sfxVolume ?? 0.6, musicOn: opts.music !== false,
       });
-      const signals = buildSourceSignals(clip, captionWords, source.audio, source.semantic);
+      const signals = buildSourceSignals(
+        clip, captionWords, source.audio, source.semantic,
+        clipReactionEvents(source.perception?.audio_events ?? [], clip.start, clip.end),
+      );
       let plan = regulate(basePlan, clip.duration).plan;
       let winnerRetention: number | undefined;   // undefined ⇒ simulation failed ⇒ can't gate ⇒ keep
       try {
