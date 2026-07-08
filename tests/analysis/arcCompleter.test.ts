@@ -119,3 +119,16 @@ describe('prompts state the max clip length', () => {
     expect(p).toContain('60');
   });
 });
+
+describe('completionPrompt with understanding context', () => {
+  it('completionPrompt includes STORY CONTEXT only when understanding text is provided', () => {
+    const base = { window: { start: 0, end: 30 }, contextSegments: [], evidence: 'e', mode: 'clippies' as const, hasImages: false };
+    const without = completionPrompt(base);
+    const withCtx = completionPrompt({ ...base, understanding: 'sc0 -pays_off-> sc1 (0.80)' });
+    expect(without).not.toContain('STORY CONTEXT');
+    expect(withCtx).toContain('STORY CONTEXT (scene graph):');
+    expect(withCtx).toContain('sc0 -pays_off-> sc1 (0.80)');
+    // identity: undefined understanding produces the exact same prompt as before this change
+    expect(completionPrompt({ ...base, understanding: undefined })).toBe(without);
+  });
+});
