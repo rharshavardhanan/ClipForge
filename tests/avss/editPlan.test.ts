@@ -83,6 +83,12 @@ describe('buildSourceSignals', () => {
     const s = buildSourceSignals({ start: 10, end: 25 }, [], audio, []);
     expect(s.reactionEvents).toBeUndefined();
   });
+
+  it('buildSourceSignals threads importance through as the final optional param', () => {
+    const s = buildSourceSignals({ start: 10, end: 25 }, [], audio, [], undefined, [{ t: 0, v: 0.9 }]);
+    expect(s.importance).toEqual([{ t: 0, v: 0.9 }]);
+    expect(buildSourceSignals({ start: 10, end: 25 }, [], audio, []).importance).toBeUndefined();
+  });
 });
 
 describe('buildEditPlan', () => {

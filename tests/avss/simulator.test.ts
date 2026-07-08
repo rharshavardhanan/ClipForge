@@ -137,4 +137,15 @@ describe('simulate', () => {
     const s = signals();
     expect(simulate(plan(), s)).toEqual(simulate(plan(), { ...s, reactionEvents: undefined }));
   });
+
+  it('importance lifts attention inside high-importance spans and is identity when absent', () => {
+    const hot = { ...signals(), importance: Array.from({ length: 60 }, (_, t) => ({ t, v: 1 })) };
+    const cold = { ...signals(), importance: Array.from({ length: 60 }, (_, t) => ({ t, v: 0 })) };
+    const simHot = simulate(plan(), hot);
+    const simCold = simulate(plan(), cold);
+    const meanA = (s: { attention: { v: number }[] }) => s.attention.reduce((a, p) => a + p.v, 0) / s.attention.length;
+    expect(meanA(simHot)).toBeGreaterThan(meanA(simCold));
+    // identity
+    expect(simulate(plan(), signals())).toEqual(simulate(plan(), { ...signals(), importance: undefined }));
+  });
 });

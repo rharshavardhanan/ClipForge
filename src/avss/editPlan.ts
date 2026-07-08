@@ -10,6 +10,7 @@ import type {
 import type { ModeProfile } from '../modes.js';
 import { buildZoomSfxTimes } from '../sfx/events.js';
 import type { ReactionEvent } from '../perception/query.js';
+import type { ImportancePoint } from '../understanding/types.js';
 
 export interface EditPlan {
   hookText?: string;                      // resolved card text (≤8 words)
@@ -30,6 +31,8 @@ export interface SourceSignals {
   sentiment?: string;
   /** Real audience reactions from perception (clip-relative), absent when perception is off. */
   reactionEvents?: ReactionEvent[];
+  /** SP2 understanding importance (clip-relative, 1s grid); absent when understanding is off. */
+  importance?: ImportancePoint[];
 }
 
 export function clamp01(x: number): number {
@@ -57,6 +60,7 @@ export function buildSourceSignals(
   audio: AudioEnergyLayer,
   semantic: SemanticWindow[],
   reactionEvents?: ReactionEvent[],
+  importance?: ImportancePoint[],
 ): SourceSignals {
   const durationSec = clip.end - clip.start;
 
@@ -88,7 +92,7 @@ export function buildSourceSignals(
     }
   }
 
-  return { durationSec, words, rms, silences, semantic: scores, sentiment: clip.sentiment, reactionEvents };
+  return { durationSec, words, rms, silences, semantic: scores, sentiment: clip.sentiment, reactionEvents, importance };
 }
 
 /** PURE: assemble the base (pre-variant) edit plan from the mode profile + resolved options. */
