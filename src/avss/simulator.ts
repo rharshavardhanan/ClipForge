@@ -65,6 +65,16 @@ function eventGap(events: number[], t: number): number {
   return t - last;
 }
 
+// SP2: understanding importance nudges attention (evidence, small weight — the proxies stay primary).
+const IMPORTANCE_ATTENTION_WEIGHT = 0.15;
+
+function importanceAt(signals: SourceSignals, t: number): number {
+  const curve = signals.importance!;
+  let best = curve[0];
+  for (const p of curve) if (Math.abs(p.t - t) < Math.abs(best.t - t)) best = p;
+  return best.v;
+}
+
 /** Plan events + emphasized caption words (word-level pops ARE visual changes). */
 function eventsWithEmphasis(events: number[], signals: SourceSignals): number[] {
   return [...new Set([...events, ...signals.words.filter((w) => w.emphasized).map((w) => w.start)])]
@@ -77,7 +87,9 @@ function attentionCurve(plan: EditPlan, signals: SourceSignals, events: number[]
     const gap = eventGap(withWords, t);
     const boost = 0.25 * Math.exp(-gap / 0.8);
     const stale = Math.min(0.4, 0.08 * Math.max(0, gap - 2.5));
-    const v = clamp01(0.35 + 0.3 * wordsPerSecAt(signals, t) + 0.35 * rmsAt(signals, t) + boost - stale);
+    const imp = signals.importance && signals.importance.length > 0
+      ? IMPORTANCE_ATTENTION_WEIGHT * (importanceAt(signals, t) - 0.5) : 0;
+    const v = clamp01(0.35 + 0.3 * wordsPerSecAt(signals, t) + 0.35 * rmsAt(signals, t) + boost - stale + imp);
     return { t, v };
   });
 }
