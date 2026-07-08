@@ -93,7 +93,10 @@ class ClipScenesProducer:
         with tempfile.TemporaryDirectory() as td:
             for i, (start, end) in enumerate(spans):
                 frame = ffmpeg.extract_frame(video, (start + end) / 2, f"{td}/{i}.jpg")
-                image = preprocess(Image.open(frame)).unsqueeze(0)
+                # Close each frame's file handle — hundreds of scenes would otherwise pile up
+                # open fds and hit the macOS soft limit mid-loop (producer then fails every run).
+                with Image.open(frame) as im:
+                    image = preprocess(im).unsqueeze(0)
                 with torch.no_grad():
                     feat = model.encode_image(image)
                     feat /= feat.norm(dim=-1, keepdim=True)
