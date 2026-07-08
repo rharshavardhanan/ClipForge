@@ -1,6 +1,8 @@
 import type { ArcLabel, ClipCandidate, RankedClip, SemanticScores, SemanticWindow, TranscriptSegment, WindowScore } from '../types/index.js';
 import { arcScore } from '../analysis/arcTypes.js';
 import { fillerRatio } from '../analysis/filler.js';
+import { meanImportance01 } from '../understanding/assemble.js';
+import { IMPORTANCE_SORT_WEIGHT, type ImportancePoint } from '../understanding/types.js';
 
 /** Sort-key penalty per unit filler ratio (v4 Slice B) — a rambling, filler-dense candidate
  *  ranks below a tight one. Sort-only, like the mode priority boost; composite is untouched. */
@@ -64,7 +66,7 @@ export function priorityBoost(sw: SemanticWindow | null, priorities?: (keyof Sem
 export function rank(
   candidates: ClipCandidate[],
   segments: TranscriptSegment[],
-  opts: { top: number; minScore?: number; priorities?: (keyof SemanticScores)[] },
+  opts: { top: number; minScore?: number; priorities?: (keyof SemanticScores)[]; importance?: ImportancePoint[] },
   semantic: SemanticWindow[] = [],
 ): RankedClip[] {
   const min = opts.minScore ?? 0;
@@ -75,7 +77,9 @@ export function rank(
       const text = clipText(cand, segments);
       const adjusted = arcWeightedComposite(cand.composite, cand.arc)
         + priorityBoost(sw, opts.priorities)
-        - FILLER_PENALTY_WEIGHT * fillerRatio(text);
+        - FILLER_PENALTY_WEIGHT * fillerRatio(text)
+        // SP2: understanding importance — sort-only like the mode boost; composite untouched.
+        + IMPORTANCE_SORT_WEIGHT * meanImportance01(opts.importance ?? [], cand.start, cand.end);
       return { cand, sw, text, adjusted };
     })
     .sort((a, b) => b.adjusted - a.adjusted);
