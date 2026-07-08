@@ -105,6 +105,14 @@ function dopamineEvents(plan: EditPlan, signals: SourceSignals): DopamineEvent[]
     raw.push({ t, kind: 'reward', strength: rmsAt(signals, t) });
   }
 
+  // Real audience reactions from perception outrank every proxy above — they are measured,
+  // not inferred. laughter→humor, applause/cheer→reward, impact→impact.
+  for (const r of signals.reactionEvents ?? []) {
+    const kind: DopamineEvent['kind'] =
+      r.kind === 'laughter' ? 'humor' : r.kind === 'impact' ? 'impact' : 'reward';
+    raw.push({ t: r.t, kind, strength: clamp01(r.score) });
+  }
+
   // Merge within 1s (keep the stronger), cap 8.
   raw.sort((a, b) => a.t - b.t);
   const merged: DopamineEvent[] = [];

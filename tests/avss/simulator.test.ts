@@ -120,4 +120,21 @@ describe('simulate', () => {
     expect(r.dropoffs.length).toBeLessThanOrEqual(3);
     for (const t of r.dropoffs) expect(t).toBeGreaterThanOrEqual(0);
   });
+
+  it('real reaction events become dopamine events (laughter→humor, applause→reward)', () => {
+    const s = signals({
+      reactionEvents: [
+        { t: 8, kind: 'laughter', score: 0.9 },
+        { t: 15, kind: 'applause', score: 0.7 },
+      ],
+    });
+    const r = simulate(plan(), s);
+    expect(r.dopamine.some((e) => e.kind === 'humor' && Math.abs(e.t - 8) < 1)).toBe(true);
+    expect(r.dopamine.some((e) => e.kind === 'reward' && Math.abs(e.t - 15) < 1)).toBe(true);
+  });
+
+  it('absent reactionEvents leaves the simulation unchanged', () => {
+    const s = signals();
+    expect(simulate(plan(), s)).toEqual(simulate(plan(), { ...s, reactionEvents: undefined }));
+  });
 });

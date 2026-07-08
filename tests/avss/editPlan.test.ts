@@ -72,6 +72,17 @@ describe('buildSourceSignals', () => {
     const s = buildSourceSignals({ start: 10, end: 25 }, [], audio, sem);
     expect(s.semantic).toEqual(zeroScores);
   });
+
+  it('threads reactionEvents through', () => {
+    const s = buildSourceSignals({ start: 10, end: 25 }, [], audio, [],
+      [{ t: 1, kind: 'laughter', score: 0.8 }]);
+    expect(s.reactionEvents).toEqual([{ t: 1, kind: 'laughter', score: 0.8 }]);
+  });
+
+  it('leaves reactionEvents undefined when omitted', () => {
+    const s = buildSourceSignals({ start: 10, end: 25 }, [], audio, []);
+    expect(s.reactionEvents).toBeUndefined();
+  });
 });
 
 describe('buildEditPlan', () => {
