@@ -1,4 +1,5 @@
 import type { SemanticTimeline } from '../perception/timeline.js';
+import type { UnderstandingResult } from '../understanding/types.js';
 
 export interface TranscriptWord { start: number; end: number; word: string; probability: number; }
 export interface TranscriptSegment {
@@ -137,4 +138,6 @@ export interface VideoAnalysis {
   motion?: { time: number; v: number }[];
   /** SP1 perception: semantic timeline from the Python service, or null when off/unavailable. */
   perception?: SemanticTimeline | null;
+  /** SP2: unified understanding pass (arcs + scenes + edges + importance), or null when unavailable. */
+  understanding?: UnderstandingResult | null;
 }

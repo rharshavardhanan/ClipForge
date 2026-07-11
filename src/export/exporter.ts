@@ -120,6 +120,9 @@ export interface ArcExport {
 /** One 6/6-gate rejection surfaced in the manifest (mirror of the CLI table). */
 export interface ArcRejectionExport { clip_id: string; start: number; end: number; missing: string[]; reason: string; }
 
+/** SP2: per-clip understanding summary (scene labels + story-edge types touching the clip). */
+export interface UnderstandingExport { scene_labels: string[]; edge_types: string[]; }
+
 export function buildClipJson(
   clip: RankedClip, jobId: string,
   files: { final: string; raw: string; srt: string; thumbnail?: string },
@@ -129,6 +132,7 @@ export function buildClipJson(
   arc?: ArcExport,
   quality?: ClipQuality,
   selection?: SelectionExport,
+  understanding?: UnderstandingExport,
 ) {
   return {
     clip_id: clip.clip_id, rank: clip.rank, source_video: clip.source_video ?? jobId,
@@ -146,6 +150,7 @@ export function buildClipJson(
     ...(arc ? { arc } : {}),
     ...(quality ? { quality: buildQualityBlock(quality) } : {}),
     ...(selection ? { selection } : {}),
+    ...(understanding ? { understanding } : {}),
     files,
   };
 }
@@ -156,6 +161,7 @@ export function buildManifest(
   arcByClip?: Map<string, ArcExport>,
   arcRejections?: ArcRejectionExport[],
   qualityByClip?: Map<string, ClipQuality>,
+  manifestUnderstanding?: { scenes: number; edges: number; provider: string },
 ) {
   const scores = clips.map((c) => c.composite_score);
   return {
@@ -175,6 +181,7 @@ export function buildManifest(
       };
     }),
     arc_rejections: arcRejections ?? [],
+    ...(manifestUnderstanding ? { understanding: manifestUnderstanding } : {}),
   };
 }
 
@@ -188,6 +195,8 @@ export async function writeExports(
   qualityByClip?: Map<string, ClipQuality>,
   edlByClip?: Map<string, ClipEdl>,
   selectionByClip?: Map<string, SelectionExport>,
+  understandingByClip?: Map<string, UnderstandingExport>,
+  manifestUnderstanding?: { scenes: number; edges: number; provider: string },
 ): Promise<void> {
   await mkdir(dir, { recursive: true });
   for (const clip of clips) {
@@ -208,9 +217,9 @@ export async function writeExports(
     const edl = edlByClip?.get(clip.clip_id);
     if (edl) await writeFile(join(dir, `${clip.clip_id}_edl.json`), JSON.stringify(edl, null, 2));
     await writeFile(join(dir, `${clip.clip_id}.json`),
-      JSON.stringify(buildClipJson(clip, jobId, files, pack, brollByClip?.get(clip.clip_id), avss, arcByClip?.get(clip.clip_id), qualityByClip?.get(clip.clip_id), selectionByClip?.get(clip.clip_id)), null, 2));
+      JSON.stringify(buildClipJson(clip, jobId, files, pack, brollByClip?.get(clip.clip_id), avss, arcByClip?.get(clip.clip_id), qualityByClip?.get(clip.clip_id), selectionByClip?.get(clip.clip_id), understandingByClip?.get(clip.clip_id)), null, 2));
   }
   await writeFile(join(dir, 'broll_manifest.json'), JSON.stringify(buildBrollManifest(clips, brollByClip), null, 2));
   await writeFile(join(dir, 'clips_manifest.json'),
-    JSON.stringify(buildManifest(jobId, source, meta, clips, avssByClip, arcByClip, arcRejections, qualityByClip), null, 2));
+    JSON.stringify(buildManifest(jobId, source, meta, clips, avssByClip, arcByClip, arcRejections, qualityByClip, manifestUnderstanding), null, 2));
 }

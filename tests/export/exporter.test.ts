@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { buildClipJson, buildManifest, writeExports, buildBrollEntries, buildBrollManifest, buildAvssFiles, buildAvssBlock, type AvssExport } from '../../src/export/exporter.js';
+import { buildClipJson, buildManifest, writeExports, buildBrollEntries, buildBrollManifest, buildAvssFiles, buildAvssBlock, type AvssExport, type UnderstandingExport } from '../../src/export/exporter.js';
 import { buildSeoPack } from '../../src/export/seo.js';
 import type { RankedClip, VideoMetadata } from '../../src/types/index.js';
 import type { ScoredVariant } from '../../src/avss/variants.js';
@@ -258,5 +258,38 @@ describe('selection rationale (v4 Slice B)', () => {
     const withSel = buildClipJson(clip, 'j', { final: 'f', raw: 'r', srt: 's' }, undefined, undefined, undefined, undefined, undefined, sel) as { selection?: unknown };
     expect(withSel.selection).toEqual(sel);
     expect('selection' in buildClipJson(clip, 'j', { final: 'f', raw: 'r', srt: 's' })).toBe(false);
+  });
+});
+
+// ---- SP2 understanding exports -------------------------------------------------------------
+describe('understanding exports (SP2)', () => {
+  const understanding: UnderstandingExport = { scene_labels: ['gym bet'], edge_types: ['pays_off'] };
+
+  it('buildClipJson embeds the understanding block only when provided', () => {
+    const withU = buildClipJson(
+      clip, 'H14bBuluwB8', { final: 'f.mp4', raw: 'r.mp4', srt: 's.srt' },
+      undefined, undefined, undefined, undefined, undefined, undefined, understanding,
+    ) as { understanding?: unknown };
+    expect(withU.understanding).toEqual(understanding);
+    expect('understanding' in buildClipJson(clip, 'H14bBuluwB8', { final: 'f.mp4', raw: 'r.mp4', srt: 's.srt' })).toBe(false);
+  });
+
+  it('buildManifest carries the manifest-level understanding summary only when provided', () => {
+    const m: any = buildManifest('job', 'src', meta, [clip], undefined, undefined, undefined, undefined,
+      { scenes: 3, edges: 2, provider: 'gemini' });
+    expect(m.understanding).toEqual({ scenes: 3, edges: 2, provider: 'gemini' });
+    const m2: any = buildManifest('job', 'src', meta, [clip]);
+    expect('understanding' in m2).toBe(false);
+  });
+
+  it('clip.json carries the understanding block and manifest carries counts when provided', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'exports-understanding-'));
+    const uMap = new Map([[clip.clip_id, understanding]]);
+    await writeExports(dir, 'job', 'url', meta, [clip], undefined, undefined, undefined, undefined, undefined,
+      undefined, undefined, undefined, uMap, { scenes: 3, edges: 2, provider: 'gemini' });
+    const clipJson = JSON.parse(await readFile(join(dir, `${clip.clip_id}.json`), 'utf8'));
+    expect(clipJson.understanding).toEqual({ scene_labels: ['gym bet'], edge_types: ['pays_off'] });
+    const manifest = JSON.parse(await readFile(join(dir, 'clips_manifest.json'), 'utf8'));
+    expect(manifest.understanding).toEqual({ scenes: 3, edges: 2, provider: 'gemini' });
   });
 });
