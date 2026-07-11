@@ -1,57 +1,11 @@
-import { mkdtemp, readFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { describe, expect, it, vi } from 'vitest';
-import { mergeMinedCandidates, mineArcs, miningPrompt, overlapFraction } from '../../src/analysis/arcMiner.js';
-import type { ArcLabel, ClipCandidate, TranscriptSegment } from '../../src/types/index.js';
-import type { TranscriptChunk } from '../../src/analysis/arcChunker.js';
+import { describe, expect, it } from 'vitest';
+import { mergeMinedCandidates, overlapFraction } from '../../src/analysis/arcMiner.js';
+import type { ArcLabel, ClipCandidate } from '../../src/types/index.js';
 
-const seg = (start: number, end: number): TranscriptSegment =>
-  ({ id: Math.round(start), start, end, text: `t${start}`, words: [] });
-const chunk: TranscriptChunk = { start: 0, end: 540, segments: [seg(0, 10), seg(10, 20)] };
 const fullComponents = {
   setup: { start: 10, end: 13 }, trigger: { start: 12, end: 13 }, escalation: { start: 13, end: 16 },
   peak: { start: 16, end: 18 }, payoff: { start: 18, end: 21 }, reaction: { start: 21, end: 25 },
 };
-const goodArcRaw = { synopsis: 'fail then scream', confidence: 0.9, components: fullComponents, reactionAfterPeak: true };
-
-describe('miningPrompt', () => {
-  it('carries transcript, evidence, mode vocabulary, and the brief/overlapping rule', () => {
-    const p = miningPrompt(chunk, 'EVIDENCE', 'clippies');
-    expect(p).toContain('t0');
-    expect(p).toContain('EVIDENCE');
-    expect(p).toMatch(/fail/i);            // clippies vocabulary
-    expect(p).toMatch(/overlap/i);         // brief-or-overlapping rule stated
-    const p2 = miningPrompt(chunk, 'E', 'mindcuts');
-    expect(p2).toMatch(/insight/i);        // mindcuts vocabulary
-  });
-});
-
-describe('mineArcs', () => {
-  it('asks once per chunk, validates, caches incrementally', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'arcs-'));
-    const cachePath = join(dir, 'layer_arcs_gemini.json');
-    const ask = vi.fn().mockResolvedValue({ arcs: [goodArcRaw, { junk: true }] });
-    const arcs = await mineArcs([chunk], () => 'E', { cachePath, durationSec: 600, mode: 'clippies', ask });
-    expect(arcs).toHaveLength(1);
-    expect(arcs[0].confidence).toBe(0.9);
-    const cached = JSON.parse(await readFile(cachePath, 'utf8'));
-    expect(cached.chunks['0-540']).toHaveLength(1);
-    // second run: cache hit, no ask
-    const ask2 = vi.fn();
-    const again = await mineArcs([chunk], () => 'E', { cachePath, durationSec: 600, mode: 'clippies', ask: ask2 });
-    expect(again).toHaveLength(1);
-    expect(ask2).not.toHaveBeenCalled();
-  });
-  it('failed chunk yields no arcs and is NOT cached (retryable)', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'arcs-'));
-    const cachePath = join(dir, 'layer_arcs_gemini.json');
-    const ask = vi.fn().mockResolvedValue(null);
-    expect(await mineArcs([chunk], () => 'E', { cachePath, durationSec: 600, mode: 'clippies', ask })).toEqual([]);
-    const cached = JSON.parse(await readFile(cachePath, 'utf8').catch(() => '{"chunks":{}}'));
-    expect(cached.chunks['0-540']).toBeUndefined();
-  });
-});
 
 describe('overlapFraction / mergeMinedCandidates', () => {
   const cand: ClipCandidate = { start: 10, end: 25, composite: 6, triggerScore: 3, audioScore: 3 };
@@ -84,29 +38,5 @@ describe('overlapFraction / mergeMinedCandidates', () => {
     const mined = out.find((c) => c.start === 100)!;
     expect(mined.composite).toBeCloseTo(10 * Math.min(1, 0.9 * 1.15));
     expect(mined.end).toBe(115);
-  });
-});
-
-describe('mineArcs Gemini-shape tolerance', () => {
-  const looseArc = {
-    setup: '10-13', trigger: '12-13', escalation: '13-16',
-    peak: '16-18', payoff: '18-21', reaction: '21-25', reactionAfterPeak: true,
-  };
-  it('accepts a TOP-LEVEL ARRAY of flattened arcs (what free-tier Gemini actually returns)', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'arcs-'));
-    const ask = vi.fn().mockResolvedValue([looseArc]);
-    const arcs = await mineArcs([chunk], () => 'E', { cachePath: join(dir, 'c.json'), durationSec: 600, mode: 'clippies', ask });
-    expect(arcs).toHaveLength(1);
-    expect(arcs[0].components.setup).toEqual({ start: 10, end: 13 });
-    expect(arcs[0].confidence).toBe(0.5);          // neutral prior when Gemini omits it
-  });
-  it('prompt states the exact output shape', () => {
-    expect(miningPrompt(chunk, 'E', 'clippies')).toContain('"arcs"');
-  });
-});
-
-describe('miningPrompt max span', () => {
-  it('states the maximum story span when given', () => {
-    expect(miningPrompt(chunk, 'E', 'mindcuts', 60)).toMatch(/60/);
   });
 });

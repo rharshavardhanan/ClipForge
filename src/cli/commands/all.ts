@@ -17,7 +17,7 @@ import { buildClips } from '../../clipDetection/merger.js';
 import { rank, defaultMinScore, arcWeightedComposite } from '../../clipDetection/ranker.js';
 import { motionLayer } from '../../analysis/motion.js';
 import { chunkTranscript } from '../../analysis/arcChunker.js';
-import { mineArcs, mergeMinedCandidates } from '../../analysis/arcMiner.js';
+import { mergeMinedCandidates } from '../../analysis/arcMiner.js';
 import { generateArcTemplateCandidates, mergeTemplateCandidates } from '../../director/arcTemplates.js';
 import { buildEvidenceBlock } from '../../analysis/arcEvidence.js';
 import { extractKeyframes, keyframeTimes, peakTime } from '../../analysis/keyframes.js';
@@ -62,7 +62,7 @@ import { regulate } from '../../avss/regulator.js';
 import { generateVariants, scoreVariants, pickWinner, type VariantPins } from '../../avss/variants.js';
 import { defaultPolicy, loadPolicy, type Policy } from '../../avss/policy.js';
 import { extractDna, loadTemplates, type EliteTemplate } from '../../avss/templates.js';
-import type { ArcExport, AvssExport } from '../../export/exporter.js';
+import type { ArcExport, AvssExport, UnderstandingExport } from '../../export/exporter.js';
 import { acquireBroll } from '../../broll/acquire.js';
 import { filterCallouts } from '../../broll/planner.js';
 import { logger } from '../../utils/logger.js';
@@ -71,6 +71,11 @@ import { SubprocessPerceptionClient } from '../../perception/subprocessClient.js
 import { clipReactionEvents, sceneTopicOf } from '../../perception/query.js';
 import type { ArcLabel, AudioEnergyLayer, BrollSegment, RankedClip, TranscriptSegment, VideoAnalysis } from '../../types/index.js';
 import { resolveCaptionStyle, type CaptionOverrides, type CaptionStyle } from '../../captions/presets.js';
+import { runUnderstanding } from '../../understanding/engine.js';
+import { buildPerceptionDigest } from '../../understanding/digest.js';
+import { renderUnderstandingContext } from '../../understanding/context.js';
+import { sliceImportance } from '../../understanding/assemble.js';
+import type { UnderstandingResult } from '../../understanding/types.js';
 
 const WS = process.env.WORKSPACE_DIR ?? './workspace';
 
@@ -257,9 +262,6 @@ export async function analyzeVideo(url: string, opts: AllOpts): Promise<VideoAna
   });
   sp.succeed(`Transcript ready — ${segments.reduce((a, s) => a + s.words.length, 0)} words`);
 
-  // Enrichment only — fail-soft to null; cached per source under workspace/perception/<jobId>.
-  const perception = await perceptionPromise;
-
   sp = ora('Analyzing (triggers + audio energy)…').start();
   const triggers = detectTriggers(segments);
   const audio = await analyzeAudio(dl.videoPath);
@@ -288,29 +290,45 @@ export async function analyzeVideo(url: string, opts: AllOpts): Promise<VideoAna
   const candidates = buildClips(windows, segments, audio, threshold, meta.duration, profile.lengths);
   sp.succeed(`Found ${candidates.length} candidates${boosts.length ? ` (${boosts.length} viewer-flagged moments)` : ''}`);
 
-  // v7 arc engine (recall pass): mine complete micro-stories the scorer never surfaces.
-  // Fail-soft — mining errors leave the scorer candidates untouched. No LLM → engine off.
+  // Move the perception await here (from Task 10's placement): the digest needs it,
+  // and by now transcript+triggers+semantic have hidden the pass's wall time.
+  const perception = await perceptionPromise;
+
+  // SP2 understanding pass (supersedes arc mining): one unified LLM call per chunk
+  // returns arcs + scenes + edges; importance fused in pure Node. Fail-soft per chunk.
+  let understanding: UnderstandingResult | null = null;
   let arcCandidates = candidates;
   let motion: { time: number; v: number }[] = [];
   if (chosen !== 'none') {
-    sp = ora('Mining micro-story arcs…').start();
+    sp = ora('Understanding pass (scenes + stories + importance)…').start();
     try {
       motion = await motionLayer(dl.videoPath, join(dirs.analysis, 'layer_motion.json'));
-      const arcs = await mineArcs(
+      understanding = await runUnderstanding(
         chunkTranscript(segments),
         (c) => buildEvidenceBlock({
           window: { start: c.start, end: c.end },
           rms: toCurve(audio), motion, silences: audio.silence_regions,
         }),
-        { cachePath: join(dirs.analysis, `layer_arcs_${chosen}.json`), durationSec: meta.duration, mode: profile.name, maxSpanSec: profile.lengths.max },
+        (c) => buildPerceptionDigest(perception, { start: c.start, end: c.end }),
+        { rms: toCurve(audio), motion, events: perception?.audio_events ?? [],
+          durationSec: meta.duration, useSceneTerm: true },
+        { cachePath: join(dirs.analysis, `layer_understanding_${chosen}.json`),
+          durationSec: meta.duration, mode: profile.name,
+          maxSpanSec: profile.lengths.max, provider: chosen },
       );
-      arcCandidates = mergeMinedCandidates(candidates, arcs);
-      sp.succeed(`arcs: ${arcs.length} mined, ${arcCandidates.length} candidates total`);
+      arcCandidates = mergeMinedCandidates(candidates, understanding.arcs);
+      sp.succeed(`understanding: ${understanding.scenes.length} scenes, ${understanding.edges.length} edges, `
+        + `${understanding.arcs.length} arcs, importance ready (${understanding.provider})`);
     } catch (e) {
-      sp.warn(`arc mining unavailable (${e instanceof Error ? e.message : String(e)}) — scorer candidates only`);
+      sp.warn(`understanding unavailable (${e instanceof Error ? e.message : String(e)}) — scorer candidates only`);
     }
   } else {
-    logger.warn('arc engine OFF — no LLM provider (SEMANTIC_PROVIDER/keys); story gate disabled, pipeline runs as before');
+    logger.warn('understanding OFF — no LLM provider (SEMANTIC_PROVIDER/keys); story gate disabled, pipeline runs as before');
+    understanding = await runUnderstanding([], () => '', () => '',
+      { rms: toCurve(audio), motion: [], events: perception?.audio_events ?? [],
+        durationSec: meta.duration, useSceneTerm: false },
+      { cachePath: join(dirs.analysis, 'layer_understanding_none.json'),
+        durationSec: meta.duration, mode: profile.name, provider: 'none' });
   }
 
   // v4 Slice E: pure arc-template candidates (Q&A exchanges, reaction/punchline anchors) the
@@ -324,7 +342,7 @@ export async function analyzeVideo(url: string, opts: AllOpts): Promise<VideoAna
     logger.info(`arc templates: +${finalCandidates.length - arcCandidates.length} Q&A/reaction candidate(s)`);
   }
 
-  return { jobId, url, videoPath: dl.videoPath, meta, segments, triggers, audio, semantic, candidates: finalCandidates, mode: profile.name, motion, perception };
+  return { jobId, url, videoPath: dl.videoPath, meta, segments, triggers, audio, semantic, candidates: finalCandidates, mode: profile.name, motion, perception, understanding };
 }
 
 /**
@@ -430,6 +448,7 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
     // Mode grammar shapes the ordering: clippies rank up humor/shock, mindcuts wisdom/story.
     const ranked = rank(candidates, analysis.segments, {
       top: Infinity, minScore: opts.minScore, priorities: MODE_PROFILES[analysis.mode].priorities,
+      importance: analysis.understanding?.importance,
     }, analysis.semantic);
     for (const clip of ranked) pool.push({ clip, source: analysis });
   }
@@ -477,6 +496,7 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
         window, segments: contextSegments, evidence, images,
         priorArc: clip.arc, mode: source.mode, durationSec: source.meta.duration,
         maxSec: MODE_PROFILES[source.mode].lengths.max,
+        understanding: renderUnderstandingContext(source.understanding ?? null, window),
       });
       const gate = gateArc(completion);
       if (!gate.pass) {
@@ -642,6 +662,7 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
       const signals = buildSourceSignals(
         clip, captionWords, source.audio, source.semantic,
         clipReactionEvents(source.perception?.audio_events ?? [], clip.start, clip.end),
+        sliceImportance(source.understanding?.importance ?? [], clip.start, clip.end),
       );
       let plan = regulate(basePlan, clip.duration).plan;
       let winnerRetention: number | undefined;   // undefined ⇒ simulation failed ⇒ can't gate ⇒ keep
@@ -858,9 +879,27 @@ export async function rankAndExport(analyses: VideoAnalysis[], opts: AllOpts): P
   // it unchanged), while sub-floor clips get their own manifest under below_retention/.
   const aboveClips = ranked.filter((c) => !belowFloorIds.has(c.clip_id));
   const belowClips = ranked.filter((c) => belowFloorIds.has(c.clip_id));
-  await writeExports(exportsDir, id, primary.url, primary.meta, aboveClips, packs, brollByClip, avssByClip, arcByClip, arcRejections, qualityByClip, edlByClip, selectionByClip);
+
+  // SP2: per-clip scene labels + touching story-edge types, plus a manifest-level summary
+  // of the primary source's understanding pass (scene/edge counts + provider).
+  const understandingByClip = new Map<string, UnderstandingExport>();
+  for (const { clip, source } of selected) {
+    const u = source.understanding;
+    if (!u) continue;
+    const overlapping = u.scenes.filter((s) => s.span.end > clip.start && s.span.start < clip.end);
+    const ids = new Set(overlapping.map((s) => s.id));
+    understandingByClip.set(clip.clip_id, {
+      scene_labels: [...new Set(overlapping.map((s) => s.label))].slice(0, 6),
+      edge_types: [...new Set(u.edges.filter((e) => ids.has(e.from) || ids.has(e.to)).map((e) => e.type))],
+    });
+  }
+  const manifestUnderstanding = primary.understanding
+    ? { scenes: primary.understanding.scenes.length, edges: primary.understanding.edges.length, provider: primary.understanding.provider }
+    : undefined;
+
+  await writeExports(exportsDir, id, primary.url, primary.meta, aboveClips, packs, brollByClip, avssByClip, arcByClip, arcRejections, qualityByClip, edlByClip, selectionByClip, understandingByClip, manifestUnderstanding);
   if (belowClips.length > 0) {
-    await writeExports(belowDir, id, primary.url, primary.meta, belowClips, packs, brollByClip, avssByClip, arcByClip, [], qualityByClip, edlByClip, selectionByClip);
+    await writeExports(belowDir, id, primary.url, primary.meta, belowClips, packs, brollByClip, avssByClip, arcByClip, [], qualityByClip, edlByClip, selectionByClip, understandingByClip, manifestUnderstanding);
   }
 
   // Per-run report: every clip's audit outcome + a tally of every reason code that fired.
