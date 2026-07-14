@@ -97,7 +97,21 @@ if [ "${CLIPFORGE_NO_CAFFEINATE:-}" != "1" ] && [ "$(uname)" = "Darwin" ] && com
 fi
 
 if [ $# -eq 0 ]; then
+  # Already running (e.g. started from another terminal)? Don't crash on the busy
+  # port — just bring the app up in the browser.
+  if curl -s -o /dev/null --max-time 1 http://localhost:3210 2>/dev/null; then
+    say "ClipForge GUI already running → http://localhost:3210 ${dim}(opening browser)${reset}"
+    command -v open >/dev/null && open http://localhost:3210
+    exit 0
+  fi
   say "Starting ClipForge GUI → http://localhost:3210  ${dim}(Ctrl-C to stop)${reset}"
+  # Open the browser once the server is up (best-effort; server keeps the foreground).
+  if command -v open >/dev/null; then
+    ( for _ in $(seq 1 30); do
+        curl -s -o /dev/null --max-time 1 http://localhost:3210 2>/dev/null && { open http://localhost:3210; break; }
+        sleep 1
+      done ) >/dev/null 2>&1 &
+  fi
   exec "${KEEP_AWAKE[@]}" node dist/cli/index.js ui
 else
   exec "${KEEP_AWAKE[@]}" node dist/cli/index.js "$@"
