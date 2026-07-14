@@ -75,7 +75,7 @@ v(t) = clamp01(0.45·scene01 + 0.20·rms01 + 0.15·motion01 + 0.20·event01)
 
 ## 4. Consumers (all wired in v1 — understanding nobody consumes is pure latency)
 
-1. **Ranker — sort-only importance boost.** `rank`'s sort key (`src/clipDetection/ranker.ts`) gains `IMPORTANCE_SORT_WEIGHT (1.5) × meanImportance01(candidate span)` — the established sort-only pattern (mode-priority boost, filler penalty). Composite untouched; no curve → sort key unchanged → **no-understanding runs are bit-identical**.
+1. **Ranker — sort-only importance boost.** `rank`'s sort key (`src/clipDetection/ranker.ts`) gains `IMPORTANCE_SORT_WEIGHT (1.5) × meanImportance01(candidate span)` — the established sort-only pattern (mode-priority boost, filler penalty). Composite untouched; an absent/empty curve → sort key unchanged (bit-identical, function-level guarantee, tested). **Ratified (user decision 2026-07-14, final whole-branch review):** in no-LLM runs the *heuristic* importance curve (RMS/motion/audio-events, no LLM) IS an intended ranking/AVSS signal — offline runs are deliberately NOT bit-identical to pre-SP2; the identity guarantee applies to the empty-curve case, not to provider `none`.
 2. **Arc completion + 6/6 gate — richer context.** The completion prompt for each candidate gains the scenes overlapping its bounds + edges touching those scenes (≤12 lines). The gate's 6/6 authority, envelope hard-gate, and `--lenient` escape are untouched — this is evidence, not policy.
 3. **AVSS — importance in the attention curve.** `SourceSignals` gains optional `importance?: { t: number; v: number }[]` (clip-relative slice, mirroring `reactionEvents`); the simulator's attention curve adds `0.15 × (importance(t) − 0.5)` when present, clamped. Absent → bit-identical simulation (identity test required).
 4. **Exports/GUI (minimal).** `clip.json` gains `understanding: { scene_labels: string[], edge_types: string[] }` for the clip's span; manifest gains `understanding: { scenes: N, edges: M, provider }`; one run-log line (`understanding: 14 scenes, 9 edges, importance ready`). No new GUI surface in v1.
@@ -94,8 +94,8 @@ v(t) = clamp01(0.45·scene01 + 0.20·rms01 + 0.15·motion01 + 0.20·event01)
 |---|---|---|
 | yes | yes | Full trio |
 | yes | no | Scenes from transcript/silence structure, no audience events in digest/curve; arcs+edges still mined |
-| no | yes | Heuristic scenes (timeline scenes as-is), heuristic curve (renormalized), no arcs/edges — pipeline behaves as today's no-LLM path |
-| no | no | Heuristic curve from RMS/motion only; everything else exactly pre-SP2 |
+| no | yes | Heuristic scenes (timeline scenes as-is), heuristic curve (renormalized), no arcs/edges — no story gate (as today's no-LLM path); the heuristic curve DOES influence ranking/AVSS (ratified 2026-07-14) |
+| no | no | Heuristic curve from RMS/motion only — influences ranking/AVSS (ratified); no arcs/edges/gate, everything else pre-SP2 |
 
 Per-chunk LLM failures: warn, skip, uncached (retry next run) — mined chunks still contribute. A fully-failed understanding pass = row 3/4 behavior; the run never dies for understanding reasons.
 
